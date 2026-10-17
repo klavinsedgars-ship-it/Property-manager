@@ -21,6 +21,7 @@ from datetime import date, datetime
 # (name, group). Order is the order shown in forms.
 CATEGORIES = [
     ("Rent", "income"),
+    ("Short-term rental income", "income"),     # Airbnb / Booking.com bookings (gross)
     ("Utility reimbursement", "income"),
     ("Other income", "income"),
     ("Renovation – materials", "capex"),
@@ -33,6 +34,8 @@ CATEGORIES = [
     ("Property tax (NĪN)", "opex"),
     ("Insurance", "opex"),
     ("Management / agent fee", "opex"),
+    ("Platform fees (Airbnb/Booking)", "opex"),
+    ("Cleaning & laundry", "opex"),
     ("Accounting & legal", "opex"),
     ("Bank fees", "opex"),
     ("Other expense", "opex"),
