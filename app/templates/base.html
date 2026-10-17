@@ -20,10 +20,10 @@
     <a href="{{ url_for('main.tenants') }}" class="{{ 'on' if 'tenant' in ep }}">Tenants</a>
     <a href="{{ url_for('main.documents') }}" class="{{ 'on' if 'document' in ep }}">Documents</a>
     <a href="{{ url_for('main.market_view') }}" class="{{ 'on' if 'market' in ep }}">Market data</a>
-    <a href="{{ url_for('main.settings_view') }}" class="{{ 'on' if 'settings' in ep }}">Settings</a>
+    <a href="{{ url_for('main.settings_view') }}" class="{{ 'on' if 'settings' in ep or ep == 'main.status' }}">Settings</a>
   </nav>
   <main>
-    {% if ephemeral %}<div class="flash error"><b>Storage not connected.</b> This deployment is using temporary storage — anything you enter will be lost. Connect a Neon Postgres database (DATABASE_URL) and a private Blob store (BLOB_READ_WRITE_TOKEN) in Vercel → Storage, then redeploy.</div>{% endif %}
+    {% if ephemeral %}<div class="flash error"><b>Storage not connected.</b> This deployment is using temporary storage — anything you enter will be lost. <a href="{{ url_for('main.status') }}">See what's missing →</a></div>{% endif %}
     {% for cat, msg in get_flashed_messages(with_categories=true) %}
       <div class="flash {{ cat }}">{{ msg }}</div>
     {% endfor %}

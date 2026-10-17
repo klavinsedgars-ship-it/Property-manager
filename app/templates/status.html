@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head"><div><h1>Storage status</h1><div class="sub">Diagnostics for the deployment. Only variable names are shown, never values.</div></div></div>
+<div class="card" style="max-width:820px">
+  <table>
+    <tr><td>Running on Vercel</td><td>{{ 'yes' if on_vercel else 'no' }}</td></tr>
+    <tr><td>Database</td><td class="{{ 'pos' if backend == 'PostgreSQL' and not db_error else 'neg' }}">{{ backend }}{% if st.database %} — from <code>{{ st.database }}</code>{% endif %}</td></tr>
+    <tr><td>Database connection</td><td class="{{ 'neg' if db_error else 'pos' }}">{{ db_error or 'OK' }}</td></tr>
+    <tr><td>Document storage</td><td class="{{ 'pos' if blob else 'neg' }}">{% if blob %}Vercel Blob — from <code>{{ st.blob }}</code>{% else %}local folder (temporary on Vercel){% endif %}</td></tr>
+    <tr><td>Password (PM_PASSWORD)</td><td class="{{ 'pos' if password_set else 'neg' }}">{{ 'set' if password_set else 'not set — anyone with the link can open the app' }}</td></tr>
+    <tr><td>Storage-related variables found</td><td>{% for n in env_names %}<code>{{ n }}</code>{{ ', ' if not loop.last }}{% else %}none{% endfor %}</td></tr>
+  </table>
+  {% if not st.database or not blob %}
+    <p class="note">If a store is connected but not detected: in Vercel open the store → <b>Settings / Projects</b>, check it is connected to the <b>Production</b> environment, then <b>Redeploy</b> (environment variables are only read when a deployment is built).</p>
+  {% endif %}
+</div>
+{% endblock %}

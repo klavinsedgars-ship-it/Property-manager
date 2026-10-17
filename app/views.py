@@ -505,3 +505,9 @@ def market_clear():
     get_db().commit()
     flash("Imported deals cleared")
     return redirect(url_for("main.market_view"))
+
+
+@bp.route("/status")
+def status():
+    from . import status_context
+    return render_template("status.html", **status_context(current_app))

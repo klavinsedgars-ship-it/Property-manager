@@ -22,5 +22,6 @@
   <h2>Data &amp; backup</h2>
   <p class="note">Everything lives in <code>data/property.db</code> (SQLite) and <code>data/uploads/</code>. Back up the <code>data</code> folder. Set <code>PM_PASSWORD</code> to require a login when running on a server.</p>
   <a class="btn ghost" href="{{ url_for('main.transactions_csv') }}">Export entries (CSV)</a>
+  <a class="btn ghost" href="{{ url_for('main.status') }}">Storage status</a>
 </div>
 {% endblock %}
