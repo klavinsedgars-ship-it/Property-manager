@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}{{ a.title }} · Deal analyzer{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>{{ a.title }}</h1>
+    <div class="sub">{% if a.url %}<a href="{{ a.url }}" target="_blank" rel="noopener">Open listing ↗</a> · {% endif %}analysed {{ a.created_at[:16] }}</div></div>
+  <a class="btn ghost" href="{{ url_for('main.analyzer_view') }}">← All analyses</a>
+</div>
+{% for n in a.notes or [] %}<div class="flash">{{ n }}</div>{% endfor %}
+
+{% if r %}
+{% set m, ret, pa = r.market, r.returns, r.price_advice %}
+<div class="grid g2">
+  <div class="card verdict-card v-{{ r.verdict }}">
+    <div style="display:flex;gap:16px;align-items:center">
+      <div class="score">{{ r.score }}<small>/100</small></div>
+      <div><h2 style="margin:0">{{ {'good': 'Good deal', 'fair': 'Fair — negotiate', 'poor': 'Poor deal'}[r.verdict] }}</h2>
+        <div class="note">Score from price vs registered sales, net yield and 10-year return.</div></div>
+    </div>
+    <ul class="note" style="margin:10px 0 0">{% for x in r.reasons %}<li>{{ x }}</li>{% endfor %}</ul>
+  </div>
+  <div class="card">
+    <h2>AI opinion</h2>
+    {% if adv and not adv.error %}
+      <p><span class="badge v-{{ {'good_deal': 'good', 'fair_deal': 'fair'}.get(adv.verdict, 'poor') }}">{{ adv.verdict|replace('_', ' ') }}</span> <b>{{ adv.headline }}</b></p>
+      <p>{{ adv.summary }}</p>
+      {% if adv.risks %}<ul class="note">{% for x in adv.risks %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+      <p class="note"><b>Negotiation:</b> {{ adv.negotiation }}</p>
+    {% elif adv and adv.error %}<p class="neg">{{ adv.error }}</p>
+    {% elif not ai_on %}<p class="note">Set <code>ANTHROPIC_API_KEY</code> in Vercel → Settings → Environment Variables, redeploy, then press “Recalculate” with “Update AI opinion” ticked.</p>
+    {% else %}<p class="note">Tick “Update AI opinion” below and recalculate.</p>{% endif %}
+  </div>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="l">Asking price</div><div class="v">{{ inp.price|money }}</div><div class="h">{{ r.price_m2|money }}/m² · {{ inp.area_m2|num(1) }} m²</div></div>
+  <div class="kpi"><div class="l">Recommended max price</div><div class="v pos">{{ pa.max_price|money }}</div><div class="h">{% if pa.discount_needed and pa.discount_needed > 0 %}{{ pa.discount_needed|pct(0) }} below asking{% else %}asking is within budget{% endif %}</div></div>
+  <div class="kpi"><div class="l">Opening offer</div><div class="v">{{ pa.opening_offer|money }}</div><div class="h">start here, settle ≤ max</div></div>
+  <div class="kpi"><div class="l">Market value (comparables)</div><div class="v">{{ pa.fair_value|money if pa.fair_value else '—' }}</div><div class="h">{% if m.median_m2 %}median {{ m.median_m2|money }}/m² · {{ m.n }} sales{% else %}not enough sales data{% endif %}</div></div>
+  <div class="kpi"><div class="l">Net yield</div><div class="v">{{ ret.net_yield|pct }}</div><div class="h">gross {{ ret.gross_yield|pct }} · target {{ inp.target_yield|num(1) }}%</div></div>
+  <div class="kpi"><div class="l">Cash flow / month</div><div class="v {{ 'pos' if ret.cash_flow_month >= 0 else 'neg' }}">{{ ret.cash_flow_month|money }}</div><div class="h">{% if ret.loan %}after loan {{ ret.payment|money }}/m{% else %}no loan{% endif %}, after 10% tax</div></div>
+  <div class="kpi"><div class="l">Cash-on-cash</div><div class="v">{{ ret.cash_on_cash|pct }}</div><div class="h">own cash {{ ret.own_cash|money }}</div></div>
+  <div class="kpi"><div class="l">10-year IRR</div><div class="v">{{ ret.y10.irr|pct }}</div><div class="h">profit {{ ret.y10.profit|money }} · 5 y: {{ ret.y5.irr|pct }}</div></div>
+</div>
+
+<div class="grid g2">
+  <div class="card">
+    <h2>Compared with the market</h2>
+    <table>
+      {% if m.median_m2 %}
+      <tr><td>This listing</td><td class="n"><b>{{ r.price_m2|money }}/m²</b></td><td class="note">{{ m.vs_median|pct(0) }} vs median</td></tr>
+      <tr><td>Comparable registered sales</td><td class="n">{{ m.median_m2|money }}/m²</td><td class="note">middle half {{ m.p25|money }}–{{ m.p75|money }}{% if r.comps_era %} · same building era{% endif %}</td></tr>
+      <tr><td>Cheaper than</td><td class="n">{{ (1 - m.percentile)|pct(0) }}</td><td class="note">of comparable sales (24 months, ±30% size)</td></tr>
+      {% else %}
+      <tr><td colspan="3" class="note">Fewer than 3 comparable registered sales — the sync on Market data fills this in; check again later.</td></tr>
+      {% endif %}
+      {% if m.hpi_yoy is defined %}<tr><td>Latvian house prices, last 12 m</td><td class="n {{ 'pos' if m.hpi_yoy >= 0 else 'neg' }}">{{ m.hpi_yoy|pct }}</td><td class="note">CSP index {{ m.hpi_period }}</td></tr>{% endif %}
+      <tr><td>Price growth assumed</td><td class="n">{{ ret.appreciation|pct }}/yr</td><td class="note">{{ ret.appreciation_why }}</td></tr>
+    </table>
+    {% if m.sample %}
+    <details style="margin-top:8px"><summary>Comparable sales</summary>
+      <table>{% for c in m.sample %}<tr><td class="note">{{ c.date }}</td><td>{{ c.address or '' }}</td><td class="n">{{ c.area|num(1) }} m²{% if c.rooms %} · {{ c.rooms }}r{% endif %}</td><td class="n">{{ c.price|money }}</td><td class="n">{{ c.ppm|money }}/m²</td></tr>{% endfor %}</table>
+    </details>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h2>Numbers behind it</h2>
+    <table>
+      <tr><td>Purchase costs (1.5% duty + notary)</td><td class="n">{{ ret.purchase_costs|money }}</td></tr>
+      <tr><td>Renovation</td><td class="n">{{ inp.renovation|money }}</td></tr>
+      <tr class="total"><td>Total investment</td><td class="n">{{ ret.total_cost|money }}</td></tr>
+      <tr><td>Rent × 12 (estimate — edit below)</td><td class="n">{{ (inp.rent * 12)|money }}</td></tr>
+      <tr><td>Running costs (management, NĪN, insurance, repairs)</td><td class="n">−{{ ret.opex|money }}</td></tr>
+      <tr class="total"><td>Net operating income / year</td><td class="n">{{ ret.noi|money }}</td></tr>
+      {% if ret.loan %}<tr><td>Loan {{ inp.ltv|num }}% at {{ inp.loan_rate }}% / {{ inp.loan_years }} y</td><td class="n">{{ ret.loan|money }} · {{ ret.payment|money }}/m</td></tr>
+      <tr><td>Debt cover (NOI ÷ loan payments)</td><td class="n {{ 'neg' if ret.dscr and ret.dscr < 1.2 }}">{{ ret.dscr|round(2) if ret.dscr else '—' }}</td></tr>{% endif %}
+      <tr><td>Max price for {{ inp.target_yield|num(1) }}% net yield</td><td class="n">{{ pa.yield_price|money }}</td></tr>
+      <tr><td>Sold after 10 years (est.)</td><td class="n">{{ ret.y10.value|money }}</td></tr>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<form method="post" class="card stack">
+  <h2>Details &amp; assumptions <span class="note">— edit anything and recalculate</span></h2>
+  <div class="row">
+    <label>Asking price, €<input name="price" value="{{ inp.price|plain }}" inputmode="decimal"></label>
+    <label>Area, m²<input name="area_m2" value="{{ inp.area_m2|plain }}" inputmode="decimal"></label>
+    <label>Rooms<input name="rooms" value="{{ inp.rooms|plain }}"></label>
+    <label>Floor<input name="floor" value="{{ inp.floor|plain }}"></label>
+    <label>Floors in building<input name="floors_total" value="{{ inp.floors_total|plain }}"></label>
+    <label>Type<select name="kind">{% for k in ['apartment', 'house'] %}<option {{ 'selected' if inp.kind == k }}>{{ k }}</option>{% endfor %}</select></label>
+  </div>
+  <div class="row">
+    <label>City<input name="city" value="{{ inp.city or '' }}"></label>
+    <label>District<input name="district" value="{{ inp.district or '' }}"></label>
+    <label>Street<input name="street" value="{{ inp.street or '' }}"></label>
+    <label>Series<input name="building_series" value="{{ inp.building_series or '' }}" placeholder="602, 119, Lit. proj…"></label>
+    <label>Build year<input name="build_year" value="{{ inp.build_year|plain }}"></label>
+    <label>Condition<select name="condition">{% for k, v in conditions.items() %}<option value="{{ k }}" {{ 'selected' if inp.condition == k }}>{{ v }}</option>{% endfor %}</select></label>
+  </div>
+  <div class="row">
+    <label>Renovation budget, €<input name="renovation" value="{{ inp.renovation|plain }}"></label>
+    <label>Expected rent, €/month<input name="rent" value="{{ inp.rent|plain }}"></label>
+    <label>Building management, €/m²/month<input name="management_m2" value="{{ inp.management_m2|plain }}"></label>
+    <label>Target net yield, %<input name="target_yield" value="{{ inp.target_yield|plain }}"></label>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" name="use_loan" {{ 'checked' if inp.use_loan }}> Use a mortgage</label>
+    <label>Loan-to-value, %<input name="ltv" value="{{ inp.ltv|plain }}"></label>
+    <label>Interest rate, % (6M Euribor + margin)<input name="loan_rate" value="{{ inp.loan_rate|plain }}"></label>
+    <label>Term, years<input name="loan_years" value="{{ inp.loan_years|plain }}"></label>
+  </div>
+  <div class="inline">
+    <button>Recalculate</button>
+    {% if ai_on %}<label><input type="checkbox" name="rerun_ai" value="1"> Update AI opinion</label>{% endif %}
+  </div>
+  <p class="note">Rent and renovation are first estimates from city, building era and condition — replace them with what you know. Growth, vacancy, taxes and selling costs come from <a href="{{ url_for('main.settings_view') }}">Settings</a>.</p>
+</form>
+
+{% if a.listing and a.listing.description %}
+<details class="card"><summary>Listing text</summary><div style="white-space:pre-wrap;margin-top:8px" class="note">{{ a.listing.description }}</div></details>
+{% endif %}
+<form method="post" action="{{ url_for('main.analysis_delete', aid=a.id) }}" onsubmit="return confirm('Delete this analysis?')"><button class="link">Delete analysis</button></form>
+{% endblock %}

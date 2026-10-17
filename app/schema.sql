@@ -139,4 +139,17 @@ CREATE TABLE IF NOT EXISTS stat_tables (
     fetched_at  TEXT
 );
 
+-- Saved deal analyses (listing link / text -> analysis + AI opinion), JSON blobs.
+CREATE TABLE IF NOT EXISTS deal_analyses (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    url         TEXT,
+    title       TEXT,
+    listing     TEXT,
+    inputs      TEXT,
+    result      TEXT,
+    ai          TEXT,
+    notes       TEXT
+);
+
 DROP TABLE IF EXISTS market_deals;   -- replaced by `sales`

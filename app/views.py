@@ -1,9 +1,11 @@
 import csv
 import io
+import json
 from datetime import date
 
 from flask import Blueprint, Response, abort, current_app, flash, redirect, render_template, request, url_for
 
+from . import ai, analyzer
 from . import finance as fin
 from . import market
 from . import services as svc
@@ -605,3 +607,96 @@ def stats():
 def status():
     from . import status_context
     return render_template("status.html", **status_context(current_app))
+
+
+# --------------------------------------------------------------------------- deal analyzer
+
+def _load_analysis(aid):
+    r = get_db().execute("SELECT * FROM deal_analyses WHERE id=?", (aid,)).fetchone() or abort(404)
+    return {**{k: r[k] for k in r.keys()}, **{k: json.loads(r[k]) if r[k] else None
+                                               for k in ("listing", "inputs", "result", "ai", "notes")}}
+
+
+def _run_ai(listing, result):
+    if not ai.available():
+        return None
+    try:
+        brief = {k: v for k, v in listing.items() if k != "description"}
+        return ai.recommend(brief, {k: v for k, v in result.items() if k != "inputs"}, listing.get("description", ""))
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@bp.route("/analyzer", methods=["GET", "POST"])
+def analyzer_view():
+    db = get_db()
+    if request.method == "POST":
+        url = (request.form.get("url") or "").strip() or None
+        text = (request.form.get("text") or "").strip() or None
+        if not url and not text:
+            flash("Paste a listing link or the ad text", "error")
+            return redirect(url_for("main.analyzer_view"))
+        listing, _src, notes = analyzer.extract(url, text, use_ai=ai.available())
+        s = settings()
+        inputs = analyzer.default_inputs(listing, s, db)
+        result, ai_out = None, None
+        if inputs["price"] and inputs["area_m2"]:
+            result = analyzer.analyze(db, inputs, s)
+            ai_out = _run_ai(listing, result)
+        else:
+            notes.append("Price or area could not be read — fill them in below and press Recalculate.")
+        title = listing.get("title") or " · ".join(str(x) for x in (listing.get("street"), listing.get("city")) if x) \
+            or (url or "Pasted listing")[:80]
+        cur = db.execute("""INSERT INTO deal_analyses (url, title, listing, inputs, result, ai, notes)
+                            VALUES (?,?,?,?,?,?,?)""",
+                         (url, title, json.dumps(listing, ensure_ascii=False), json.dumps(inputs),
+                          json.dumps(result, default=str) if result else None,
+                          json.dumps(ai_out) if ai_out else None, json.dumps(notes)))
+        db.commit()
+        return redirect(url_for("main.analysis_view", aid=cur.lastrowid))
+    rows = db.execute("SELECT id, created_at, url, title, inputs, result, ai FROM deal_analyses "
+                      "ORDER BY id DESC LIMIT 100").fetchall()
+    history = []
+    for r in rows:
+        res = json.loads(r["result"]) if r["result"] else {}
+        adv = json.loads(r["ai"]) if r["ai"] else {}
+        history.append({"id": r["id"], "created_at": r["created_at"], "url": r["url"], "title": r["title"],
+                        "price": json.loads(r["inputs"]).get("price"), "score": res.get("score"),
+                        "verdict": res.get("verdict"), "ai_verdict": adv.get("verdict"),
+                        "max_price": (res.get("price_advice") or {}).get("max_price")})
+    return render_template("analyzer.html", history=history, ai_on=ai.available())
+
+
+@bp.route("/analyzer/<int:aid>", methods=["GET", "POST"])
+def analysis_view(aid):
+    db = get_db()
+    a = _load_analysis(aid)
+    if request.method == "POST":
+        inp = dict(a["inputs"])
+        for k in ("price", "area_m2", "renovation", "rent", "management_m2", "ltv", "loan_rate", "loan_years",
+                  "target_yield", "build_year", "rooms", "floor", "floors_total"):
+            v = request.form.get(k, "").strip().replace(",", ".").replace(" ", "")
+            inp[k] = (int(float(v)) if k in ("build_year", "rooms", "floor", "floors_total", "loan_years")
+                      else float(v)) if v else (None if k in ("build_year", "rooms", "floor", "floors_total") else 0)
+        for k in ("city", "district", "street", "building_series", "condition", "kind"):
+            inp[k] = request.form.get(k, inp.get(k) or "").strip()
+        inp["use_loan"] = bool(request.form.get("use_loan"))
+        try:
+            result = analyzer.analyze(db, inp, settings())
+        except ValueError as e:
+            flash(str(e), "error")
+            return redirect(url_for("main.analysis_view", aid=aid))
+        ai_out = _run_ai(a["listing"], result) if request.form.get("rerun_ai") else a["ai"]
+        db.execute("UPDATE deal_analyses SET inputs=?, result=?, ai=? WHERE id=?",
+                   (json.dumps(inp), json.dumps(result, default=str), json.dumps(ai_out) if ai_out else None, aid))
+        db.commit()
+        return redirect(url_for("main.analysis_view", aid=aid))
+    return render_template("analysis.html", a=a, r=a["result"], inp=a["inputs"], adv=a["ai"],
+                           conditions=analyzer.CONDITIONS, ai_on=ai.available())
+
+
+@bp.route("/analyzer/<int:aid>/delete", methods=["POST"])
+def analysis_delete(aid):
+    get_db().execute("DELETE FROM deal_analyses WHERE id=?", (aid,))
+    get_db().commit()
+    return redirect(url_for("main.analyzer_view"))

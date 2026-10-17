@@ -18,7 +18,16 @@ def num(v, decimals=0):
     return f"{float(v):,.{decimals}f}".replace(",", " ")
 
 
+def plain(v):
+    """Number for an <input>: 62000.0 -> 62000, 0.6 -> 0.6, None -> ''."""
+    if v is None or v == "":
+        return ""
+    v = float(v)
+    return str(int(v)) if v.is_integer() else f"{v:g}"
+
+
 def register_filters(app):
     app.jinja_env.filters["money"] = money
     app.jinja_env.filters["pct"] = pct
     app.jinja_env.filters["num"] = num
+    app.jinja_env.filters["plain"] = plain

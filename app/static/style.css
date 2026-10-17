@@ -89,3 +89,11 @@ details summary { cursor: pointer; color: var(--accent); }
 .leaflet-popup-content table td { padding: 2px 6px 2px 0; border: 0; }
 @media (max-width: 1000px) { .mapwrap { grid-template-columns: 1fr; } #map { height: 60vh; } .mapside { max-height: none; } }
 .leaflet-popup-content { max-height: 340px; overflow-y: auto; }
+.score { font-size: 40px; font-weight: 750; line-height: 1; }
+.score small { font-size: 14px; color: var(--muted); font-weight: 500; }
+.verdict-card { border-left: 5px solid var(--warn); }
+.verdict-card.v-good { border-left-color: var(--good); }
+.verdict-card.v-poor { border-left-color: var(--bad); }
+.badge.v-good { color: var(--good); border-color: var(--good); }
+.badge.v-fair { color: var(--warn); border-color: var(--warn); }
+.badge.v-poor { color: var(--bad); border-color: var(--bad); }

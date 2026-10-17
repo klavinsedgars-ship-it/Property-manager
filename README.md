@@ -63,6 +63,8 @@ Notes:
 - Uploads are limited to about 4.5 MB per file, which is a Vercel limit. Photos are shrunk in the browser automatically.
 - For the large VZD transaction files, use the **Import** button (the server downloads them directly) rather than uploading the file.
 
+**Deal analyzer (AI).** Add an environment variable `ANTHROPIC_API_KEY` (from console.anthropic.com) to enable two things: reading any listing page or pasted ad text (Facebook, city24…), and the written AI verdict. ss.lv links are parsed even without a key. Set `PM_AI_MODEL` to use a model other than `claude-opus-5-5`.
+
 **Automatic market data.** `vercel.json` schedules `/cron/sync` every hour. Each run:
 - refreshes the house price index, Euribor and the VZD dataset list once a day;
 - imports one new or changed VZD sales file.

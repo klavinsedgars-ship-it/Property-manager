@@ -28,7 +28,7 @@ DEFAULT_SETTINGS = {
 }
 
 # Tables with an `id SERIAL` key — Postgres INSERTs get `RETURNING id` for lastrowid.
-ID_TABLES = {"properties", "tenants", "leases", "transactions", "documents", "valuations", "sales"}
+ID_TABLES = {"properties", "tenants", "leases", "transactions", "documents", "valuations", "sales", "deal_analyses"}
 
 
 def is_postgres(target: str) -> bool:
