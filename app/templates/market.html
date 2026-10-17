@@ -24,6 +24,14 @@
       <p class="note">Every purchase registered in the Land Book since 2012: apartments, houses and land, with price, area, rooms, floor and build year. Published on <a href="https://data.gov.lv/dati/lv/dataset/nekustama-ipasuma-tirgus-datu-bazes-atvertie-dati" target="_blank">data.gov.lv</a>, updated monthly.</p></div>
     <form method="post" action="{{ url_for('main.market_discover') }}"><button class="ghost">↻ Find datasets</button></form>
   </div>
+  {% set sync = ctx.sync %}
+  <div class="flash" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <div style="flex:1;min-width:240px"><b>Automatic sync</b> — runs every hour on Vercel: refreshes market data daily and imports one new or updated VZD file per run (last {{ ctx.sync_years|int }} years, change in <a href="{{ url_for('main.settings_view') }}">Settings</a>).<br>
+      <span class="note">Last run: {{ sync.last_run or 'not yet' }}{% if sync.pending is defined %} · files still to import: {{ sync.pending }}{% endif %}</span>
+      {% if sync.last_log %}<details><summary class="note">last run log</summary><ul class="note">{% for l in sync.last_log %}<li>{{ l }}</li>{% endfor %}</ul></details>{% endif %}
+    </div>
+    <form method="post" action="{{ url_for('main.cron_sync') }}"><button>Sync now</button></form>
+  </div>
   {% if ctx.coverage %}
     <table>
       <tr><th>Imported</th><th class="n">Sales</th><th>Period</th></tr>

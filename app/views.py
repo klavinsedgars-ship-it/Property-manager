@@ -507,6 +507,26 @@ def market_import():
     return redirect(url_for("main.market_view"))
 
 
+@bp.route("/cron/sync", methods=["GET", "POST"])
+def cron_sync():
+    """Hourly hands-free sync (Vercel Cron). Also callable from the Market data page."""
+    db = get_db()
+    years = int(fin_setting("sync_years", 5))
+    log = vzd.auto_sync(db, years=years)
+    if request.method == "POST":
+        for line in log or ["Everything is up to date."]:
+            flash(line)
+        return redirect(url_for("main.market_view"))
+    return {"ok": True, "log": log}
+
+
+def fin_setting(key, default):
+    try:
+        return float(settings().get(key) or default)
+    except ValueError:
+        return default
+
+
 @bp.route("/market/discover", methods=["POST"])
 def market_discover():
     db = get_db()

@@ -413,7 +413,11 @@ def check_url(url: str):
 
 def import_url(db, url: str):
     check_url(url)
-    return import_bytes(db, _http()._get(url, timeout=240), url.rsplit("/", 1)[-1])
+    result = import_bytes(db, _http()._get(url, timeout=240), url.rsplit("/", 1)[-1])
+    modified = next((r["modified"] for r in meta_get(db, "sales_resources", []) if r["url"] == url), None)
+    mark_imported(db, url, modified)
+    db.commit()
+    return result
 
 
 # --------------------------------------------------------------------------- official statistics tables
@@ -611,3 +615,69 @@ def map_points(db, f):
                                      r[10], r[11]])
     return {"points": [[lat, lon, items] for (lat, lon), items in groups.items()],
             "count": len(rows), "truncated": len(rows) >= MAP_LIMIT}
+
+
+# --------------------------------------------------------------------------- automatic sync
+
+def _hours_since(iso):
+    if not iso:
+        return 1e9
+    return (datetime.now() - datetime.fromisoformat(iso)).total_seconds() / 3600
+
+
+def pending_files(db, years=5):
+    """Sales files not imported yet (or changed since), newest first, limited to the last `years`."""
+    done = meta_get(db, "imported", {})
+    newest = max((r["year"] or 0 for r in meta_get(db, "sales_resources", [])), default=0)
+    out = []
+    for r in meta_get(db, "sales_resources", []):
+        if r["year"] and r["year"] <= newest - years:
+            continue
+        prev = done.get(r["url"])
+        changed = prev is not None and r["modified"] and r["modified"] != prev.get("modified")
+        # the running year's file grows every month: refresh it monthly even if `modified` is missing
+        stale = prev is not None and r["year"] == date.today().year and _hours_since(prev.get("at")) > 24 * 25
+        if prev is None or changed or stale:
+            out.append(r)
+    return out
+
+
+def mark_imported(db, url, modified=None):
+    done = meta_get(db, "imported", {})
+    done[url] = {"modified": modified, "at": datetime.now().isoformat(timespec="minutes")}
+    meta_set(db, "imported", done)
+
+
+def auto_sync(db, years=5, budget_s=200) -> list[str]:
+    """One step of hands-free syncing (run hourly by Vercel Cron):
+    market series and dataset list once a day, then import pending sales files
+    while time allows. Each step commits, so an interrupted run loses nothing."""
+    from . import market
+    start, log = time.time(), []
+    state = meta_get(db, "sync", {})
+    if _hours_since(state.get("daily")) > 23:
+        for name, ok, msg in market.refresh_all(db):
+            log.append(f"{name}: {msg}")
+        state["daily"] = datetime.now().isoformat(timespec="minutes")
+        meta_set(db, "sync", state)
+        db.commit()
+    for r in pending_files(db, years):
+        if time.time() - start > budget_s * 0.4:   # leave room for one more large file
+            break
+        try:
+            added, _report = import_url(db, r["url"])
+            mark_imported(db, r["url"], r["modified"])
+            log.append(f"{r['name']}: {added} sales imported/updated")
+        except Exception as e:
+            db.rollback()
+            log.append(f"{r['name']}: failed — {e}")
+            state.setdefault("errors", {})[r["url"]] = str(e)[:300]
+            break
+        finally:
+            db.commit()
+    state["last_run"] = datetime.now().isoformat(timespec="minutes")
+    state["last_log"] = log[-12:]
+    state["pending"] = len(pending_files(db, years))
+    meta_set(db, "sync", state)
+    db.commit()
+    return log

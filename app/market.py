@@ -63,6 +63,11 @@ def _meta_set(db, key, value):
     set_setting(db, f"mkt:{key}", value)
 
 
+def _settings_value(db, key):
+    r = db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return r["value"] if r else None
+
+
 def _meta_get(db, key, default=None):
     r = db.execute("SELECT value FROM settings WHERE key = ?", (f"mkt:{key}",)).fetchone()
     return r["value"] if r else default
@@ -299,4 +304,6 @@ def overview(db):
             "euribor3": series(db, "euribor_3m")[-60:], "euribor12": series(db, "euribor_12m")[-60:],
             "coverage": vzd.coverage(db), "sales_resources": vzd.meta_get(db, "sales_resources", []),
             "stat_tables": vzd.stat_tables(db), "last_import": vzd.meta_get(db, "last_import"),
+            "sync": vzd.meta_get(db, "sync", {}),
+            "sync_years": float(_settings_value(db, "sync_years") or 5),
             "last_refresh": _meta_get(db, "last_refresh"), "bench": BENCHMARKS}

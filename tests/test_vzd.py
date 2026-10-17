@@ -203,3 +203,34 @@ def test_map_endpoint(client, app):
     assert items[0][6] > 0 and items[0][1]
     page = client.get("/market/map?kind=apartment&since=").get_data(as_text=True)
     assert 'id="map"' in page and "leaflet.js" in page
+
+
+def test_auto_sync_imports_pending_files(db, monkeypatch):
+    from app import market
+    files = {"https://data.gov.lv/a/nitis_csv_2025.zip": _zip(**{"TG_2025.csv": TG, "TG_koord.csv": COORDS_DD}),
+             "https://data.gov.lv/a/nitis_csv_2024.zip": _zip(**{"ZVB_2024.csv": ZVB}),
+             "https://data.gov.lv/a/nitis_csv_2015.zip": _zip(**{"TG_2015.csv": TG})}
+    monkeypatch.setattr(market, "refresh_all", lambda db: [("Market", True, "ok")])
+    monkeypatch.setattr(market, "_get", lambda url, timeout=60: files[url])
+    vzd.meta_set(db, "sales_resources", [
+        {"url": u, "name": u.rsplit("/", 1)[-1], "year": int(u[-8:-4]), "modified": "2026-10-10", "package": "x",
+         "format": "ZIP"} for u in files])
+    assert len(vzd.pending_files(db, years=5)) == 2          # 2015 is outside the 5-year window
+    log = vzd.auto_sync(db, years=5)
+    assert any("2025" in l for l in log)
+    assert db.execute("SELECT count(*) FROM sales").fetchone()[0] > 0
+    while vzd.pending_files(db, years=5):
+        vzd.auto_sync(db, years=5)
+    assert vzd.meta_get(db, "sync")["pending"] == 0
+    assert vzd.auto_sync(db, years=5) == []                  # nothing left, market refreshed today
+
+
+def test_cron_endpoint_auth(app, monkeypatch):
+    c = app.test_client()
+    monkeypatch.delenv("CRON_SECRET", raising=False)
+    assert c.get("/cron/sync").status_code == 403
+    monkeypatch.setattr(vzd, "auto_sync", lambda db, years=5: ["done"])
+    assert c.get("/cron/sync", headers={"User-Agent": "vercel-cron/1.0"}).get_json()["log"] == ["done"]
+    monkeypatch.setenv("CRON_SECRET", "s3")
+    assert c.get("/cron/sync", headers={"User-Agent": "vercel-cron/1.0"}).status_code == 403
+    assert c.get("/cron/sync", headers={"Authorization": "Bearer s3"}).status_code == 200

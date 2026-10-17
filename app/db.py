@@ -24,6 +24,7 @@ DEFAULT_SETTINGS = {
     "expense_growth": "3",          # % / year
     "vacancy_pct": "5",             # % of gross rent lost to vacancy
     "currency": "EUR",
+    "sync_years": "5",              # years of VZD sales history kept in sync automatically
 }
 
 # Tables with an `id SERIAL` key — Postgres INSERTs get `RETURNING id` for lastrowid.

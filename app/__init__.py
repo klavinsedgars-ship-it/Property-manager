@@ -68,6 +68,8 @@ def create_app(test_config=None):
     # Optional single-user protection: set PM_PASSWORD to enable HTTP basic auth.
     @app.before_request
     def _auth():
+        if request.path == "/cron/sync" and request.method == "GET":
+            return _cron_auth()
         pw = app.config.get("PASSWORD")
         if not pw:
             return None
@@ -85,6 +87,18 @@ def create_app(test_config=None):
     from .views import bp
     app.register_blueprint(bp)
     return app
+
+
+def _cron_auth():
+    """Vercel Cron sends `Authorization: Bearer $CRON_SECRET` when CRON_SECRET is set.
+    Without a secret, only Vercel's cron user agent is accepted (the job only
+    downloads public data, so this is low risk)."""
+    secret = os.environ.get("CRON_SECRET")
+    if secret:
+        ok = hmac.compare_digest(request.headers.get("Authorization", "").encode(), f"Bearer {secret}".encode())
+    else:
+        ok = request.headers.get("User-Agent", "").startswith("vercel-cron")
+    return None if ok else Response("Forbidden", 403)
 
 
 def status_context(app):

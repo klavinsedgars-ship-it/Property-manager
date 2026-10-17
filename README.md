@@ -63,6 +63,12 @@ Notes:
 - Uploads are limited to about 4.5 MB per file, which is a Vercel limit. Photos are shrunk in the browser automatically.
 - For the large VZD transaction files, use the **Import** button (the server downloads them directly) rather than uploading the file.
 
+**Automatic market data.** `vercel.json` schedules `/cron/sync` every hour. Each run:
+- refreshes the house price index, Euribor and the VZD dataset list once a day;
+- imports one new or changed VZD sales file.
+
+The last 5 years backfill within a few hours, and new monthly data arrives on its own after that. Optionally, set `CRON_SECRET` (any random string) to lock the endpoint down to Vercel's scheduler. Locally, use **Market data → Sync now**.
+
 The same code runs locally on SQLite when `DATABASE_URL` is not set.
 
 ### Docker
