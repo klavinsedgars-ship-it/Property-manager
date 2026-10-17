@@ -117,7 +117,8 @@ def test_yields_use_lease_rent_even_without_payments_recorded():
     m = fin.property_metrics(p, txs, [lease], 39000, "index", S, today)
     assert m.gross_yield == pytest.approx(5400 / m.cost_basis)
     assert m.net_yield == pytest.approx((5400 - 600) / m.cost_basis)      # was 0 when no rent was recorded
-    assert m.cash_on_cash == pytest.approx((5400 - 600) / m.cost_basis)
+    # utilities paid before any rent came in count as cash put in
+    assert m.cash_on_cash == pytest.approx((5400 - 600) / (m.cost_basis + 600))
 
 
 def test_irr_hidden_in_first_year():
