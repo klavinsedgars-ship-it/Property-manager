@@ -3,7 +3,7 @@
 <div class="head"><div><h1>Documents</h1><div class="sub">Deeds, land-book extracts, leases, invoices, insurance. Set an expiry date to get a reminder on the dashboard.</div></div></div>
 <div class="card">
   <form method="post" enctype="multipart/form-data" class="inline">
-    <label>File<input type="file" name="file" required></label>
+    <label>File<input type="file" name="file" required data-max-mb="{{ max_upload_mb }}"></label>
     <label>Title<input name="title"></label>
     <label>Property<select name="property_id"><option value="">— general —</option>{% for p in props %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></label>
     <label>Category<select name="category">{% for c in doc_categories %}<option>{{ c }}</option>{% endfor %}</select></label>

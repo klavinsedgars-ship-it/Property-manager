@@ -200,7 +200,7 @@ pmBar("monthly", {{ ms|map(attribute='month')|list|tojson }}, [
   <h2>Upload</h2>
   <form method="post" action="{{ url_for('main.documents') }}" enctype="multipart/form-data" class="inline">
     <input type="hidden" name="property_id" value="{{ p.id }}"><input type="hidden" name="back" value="{{ request.full_path }}">
-    <label>File<input type="file" name="file" required></label>
+    <label>File<input type="file" name="file" required data-max-mb="{{ max_upload_mb }}"></label>
     <label>Title<input name="title"></label>
     <label>Category<select name="category">{% for c in doc_categories %}<option>{{ c }}</option>{% endfor %}</select></label>
     <label>Expires<input type="date" name="expires_on"></label>

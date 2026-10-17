@@ -36,9 +36,34 @@ Configure it with these environment variables:
 | `PM_DATA_DIR` | `./data` | Location of the database and uploaded files |
 | `PM_PASSWORD` | – | Turns on a login prompt (HTTP basic auth). Use it when the app runs on a server. |
 | `PM_HOST` / `PM_PORT` | `127.0.0.1` / `5000` | Address and port the app listens on |
-| `PM_SECRET_KEY` | dev key | Set a random value in production |
+| `PM_SECRET_KEY` | derived | Set a random value in production |
+| `DATABASE_URL` | – | PostgreSQL URL (Neon). If set, used instead of SQLite |
+| `BLOB_READ_WRITE_TOKEN` | – | Vercel Blob token. If set, documents are stored there (private) |
 
 **Backup:** copy the `data/` folder.
+
+### Vercel (Flask preset)
+
+Vercel functions have no permanent disk, so the app uses **Neon Postgres** for data and a **private Vercel Blob store** for documents. Both are detected automatically from environment variables.
+
+1. **New Project:** import the repo.
+   - Root Directory: `./`
+   - Application Preset: **Flask** (the entrypoint is `index.py`)
+   - Leave the build settings at their defaults.
+2. **Environment Variables:**
+   - `PM_PASSWORD`: your login password. Strongly recommended, because the site is public.
+   - `PM_SECRET_KEY`: any long random string.
+3. Click **Deploy.** The first deploy shows a red "Storage not connected" banner. That is expected.
+4. In the project, open **Storage → Create Database → Neon** and connect it to all environments. This sets `DATABASE_URL`.
+5. Still under **Storage**, choose **Create → Blob**, set access to **Private**, and connect it. This sets `BLOB_READ_WRITE_TOKEN`.
+6. Go to **Deployments → Redeploy**. The banner disappears, and the tables are created automatically on first start.
+
+Notes:
+- `vercel.json` pins the functions to Frankfurt (`fra1`). When creating the Neon database, choose **AWS eu-central-1 (Frankfurt)** too, so pages load fast.
+- Uploads are limited to about 4.5 MB per file, which is a Vercel limit. Photos are shrunk in the browser automatically.
+- For the large VZD transaction files, use the **Import** button (the server downloads them directly) rather than uploading the file.
+
+The same code runs locally on SQLite when `DATABASE_URL` is not set.
 
 ### Docker
 
@@ -51,4 +76,5 @@ docker run -p 5000:5000 -v $PWD/data:/app/data -e PM_PASSWORD=change-me property
 
 ```bash
 pip install pytest && python -m pytest
+PM_TEST_PG=postgresql://user@localhost/postgres python -m pytest   # same suite on PostgreSQL
 ```

@@ -21,7 +21,7 @@
     <label>Lease (for rent tracking)<select name="lease_id"><option value="">—</option>
       {% for l in leases %}<option value="{{ l.id }}" {{ 'selected' if (v.lease_id|string) == (l.id|string) or (not v.lease_id and loop.first) }}>{{ l.tenant_name }} ({{ l.start_date }})</option>{% endfor %}</select></label>
   </div>
-  <label>Receipt / invoice <span class="note">(optional, saved to Documents)</span><input type="file" name="receipt" accept="image/*,application/pdf" capture="environment"></label>
+  <label>Receipt / invoice <span class="note">(optional, saved to Documents)</span><input type="file" name="receipt" data-max-mb="{{ max_upload_mb }}" accept="image/*,application/pdf" capture="environment"></label>
   <div class="inline">
     <button>Save</button>
     {% if not t %}<button name="again" value="1" class="ghost">Save &amp; add another</button>{% endif %}

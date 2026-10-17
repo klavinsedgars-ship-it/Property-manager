@@ -37,7 +37,7 @@
   {% else %}<p class="note">Press “Refresh market data” to list the available VZD files.</p>{% endif %}
   <h3>Or upload a file you downloaded</h3>
   <form method="post" action="{{ url_for('main.market_import') }}" enctype="multipart/form-data" class="inline">
-    <input type="file" name="file" accept=".csv,.zip" required><button>Import CSV / ZIP</button>
+    <input type="file" name="file" accept=".csv,.zip" required data-max-mb="{{ max_upload_mb }}"><button>Import CSV / ZIP</button>
   </form>
   {% if ctx.territories %}
     <h3>Imported by territory</h3>

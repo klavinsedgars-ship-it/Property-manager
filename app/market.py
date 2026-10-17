@@ -25,6 +25,7 @@ import zipfile
 from datetime import date, datetime
 
 from . import finance as fin
+from .db import set_setting
 
 UA = {"User-Agent": "PropertyManager/1.0 (+self-hosted)"}
 CSP_V2 = "https://api.stat.gov.lv/api/v2/tables/{table}"
@@ -54,14 +55,15 @@ def _norm(s: str) -> str:
 
 def _save_series(db, series, points, label=None, source=None):
     for period, value in points:
-        db.execute("INSERT OR REPLACE INTO market_data (series, period, value, fetched_at) VALUES (?,?,?,?)",
+        db.execute("INSERT INTO market_data (series, period, value, fetched_at) VALUES (?,?,?,?) "
+                   "ON CONFLICT (series, period) DO UPDATE SET value = excluded.value, fetched_at = excluded.fetched_at",
                    (series, period, value, datetime.now().isoformat(timespec="seconds")))
     if label:
         _meta_set(db, f"label:{series}", json.dumps({"label": label, "source": source}))
 
 
 def _meta_set(db, key, value):
-    db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (f"mkt:{key}", value))
+    set_setting(db, f"mkt:{key}", value)
 
 
 def _meta_get(db, key, default=None):
@@ -288,6 +290,7 @@ def import_deals_bytes(db, raw: bytes, source: str) -> str:
     else:
         texts = [_decode(raw)]
     added = skipped = 0
+    batch = []
     for text in texts:
         sample = text[:5000]
         try:
@@ -313,16 +316,26 @@ def import_deals_bytes(db, raw: bytes, source: str) -> str:
                 skipped += 1
                 continue
             rooms = _to_float(get(row, "rooms"))
-            cur = db.execute("""INSERT OR IGNORE INTO market_deals (source, deal_date, price, area_m2, price_m2,
-                                territory, address, cadastre_no, rooms, floor, kind)
-                                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                             (source, _to_date(get(row, "date")), price, area, round(ppm, 2),
-                              (get(row, "territory") or "").strip() or None, (get(row, "address") or "").strip() or None,
-                              (get(row, "cadastre") or "").strip() or None, int(rooms) if rooms else None,
-                              get(row, "floor"), get(row, "kind")))
-            added += cur.rowcount
+            batch.append((source, _to_date(get(row, "date")), price, area, round(ppm, 2),
+                          (get(row, "territory") or "").strip() or None, (get(row, "address") or "").strip() or None,
+                          (get(row, "cadastre") or "").strip(), int(rooms) if rooms else None,
+                          get(row, "floor"), get(row, "kind")))
+            if len(batch) >= 2000:
+                added += _insert_deals(db, batch)
+                batch = []
+        added += _insert_deals(db, batch)
     db.commit()
     return f"Imported {added} deals ({skipped} skipped as incomplete/outliers)"
+
+
+def _insert_deals(db, rows) -> int:
+    """Batch insert; duplicates (same deal re-imported) are ignored. Returns rows added."""
+    if not rows:
+        return 0
+    cur = db.executemany("""INSERT INTO market_deals (source, deal_date, price, area_m2, price_m2, territory,
+                            address, cadastre_no, rooms, floor, kind) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                            ON CONFLICT DO NOTHING""", rows)
+    return max(cur.rowcount, 0)
 
 
 def import_deals_url(db, url: str) -> str:

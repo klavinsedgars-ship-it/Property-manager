@@ -1,17 +1,14 @@
 import csv
 import io
-import uuid
 from datetime import date
-from pathlib import Path
 
-from flask import (Blueprint, Response, abort, current_app, flash, redirect, render_template,
-                   request, send_from_directory, url_for)
-from werkzeug.utils import secure_filename
+from flask import Blueprint, Response, abort, current_app, flash, redirect, render_template, request, url_for
 
 from . import finance as fin
 from . import market
 from . import services as svc
-from .db import get_db, settings
+from . import storage
+from .db import get_db, set_setting, settings
 
 bp = Blueprint("main", __name__)
 
@@ -60,7 +57,8 @@ def _num(name, default=0.0):
 
 @bp.app_context_processor
 def _ctx():
-    return {"today": date.today(), "CATEGORIES": fin.CATEGORIES, "group_of": fin.group_of}
+    return {"today": date.today(), "CATEGORIES": fin.CATEGORIES, "group_of": fin.group_of,
+            "max_upload_mb": storage.max_upload_mb(), "ephemeral": current_app.config.get("EPHEMERAL")}
 
 
 # --------------------------------------------------------------------------- dashboard
@@ -260,7 +258,7 @@ def transactions_csv():
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["date", "property", "kind", "category", "amount", "vendor", "description"])
-    w.writerows([tuple(r) for r in rows])
+    w.writerows([list(r) for r in rows])
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": "attachment; filename=transactions.csv"})
 
@@ -270,9 +268,12 @@ def transactions_csv():
 @bp.route("/tenants")
 def tenants():
     db = get_db()
-    rows = db.execute("""SELECT t.*, (SELECT group_concat(p.name, ', ') FROM leases l JOIN properties p
-                         ON p.id=l.property_id WHERE l.tenant_id=t.id AND (l.end_date IS NULL OR l.end_date >= date('now')))
-                         AS current_props FROM tenants t ORDER BY t.name""").fetchall()
+    current = {}
+    for r in db.execute("""SELECT l.tenant_id, p.name FROM leases l JOIN properties p ON p.id = l.property_id
+                           WHERE l.end_date IS NULL OR l.end_date >= ?""", (date.today().isoformat(),)):
+        current.setdefault(r["tenant_id"], []).append(r["name"])
+    rows = [{**{k: t[k] for k in t.keys()}, "current_props": ", ".join(current.get(t["id"], []))}
+            for t in db.execute("SELECT * FROM tenants ORDER BY name")]
     return render_template("tenants.html", tenants=rows)
 
 
@@ -354,8 +355,7 @@ def lease_delete(lid):
 
 def _store_document(f, pid, tenant_id, tx_id, title, category, expires_on):
     original = f.filename
-    stored = f"{uuid.uuid4().hex}_{secure_filename(original) or 'file'}"
-    f.save(Path(current_app.config["UPLOAD_DIR"]) / stored)
+    stored = storage.save(f)
     get_db().execute("""INSERT INTO documents (property_id, tenant_id, transaction_id, title, category, filename,
                         original_name, expires_on) VALUES (?,?,?,?,?,?,?,?)""",
                      (pid, tenant_id, tx_id, title or original, category, stored, original, expires_on))
@@ -386,16 +386,15 @@ def documents():
 @bp.route("/documents/<int:did>/file")
 def document_file(did):
     d = get_db().execute("SELECT * FROM documents WHERE id=?", (did,)).fetchone() or abort(404)
-    return send_from_directory(current_app.config["UPLOAD_DIR"], d["filename"],
-                               download_name=d["original_name"] or d["filename"],
-                               as_attachment=request.args.get("download") == "1")
+    return storage.send(d["filename"], d["original_name"] or "file",
+                        as_attachment=request.args.get("download") == "1")
 
 
 @bp.route("/documents/<int:did>/delete", methods=["POST"])
 def document_delete(did):
     db = get_db()
     d = db.execute("SELECT * FROM documents WHERE id=?", (did,)).fetchone() or abort(404)
-    (Path(current_app.config["UPLOAD_DIR"]) / d["filename"]).unlink(missing_ok=True)
+    storage.delete(d["filename"])
     db.execute("DELETE FROM documents WHERE id=?", (did,))
     db.commit()
     back = request.form.get("back")
@@ -478,8 +477,7 @@ def settings_view():
     if request.method == "POST":
         for k in settings(db):
             if k in request.form:
-                db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                           (k, request.form[k].strip()))
+                set_setting(db, k, request.form[k].strip())
         db.commit()
         flash("Settings saved")
         return redirect(url_for("main.settings_view"))

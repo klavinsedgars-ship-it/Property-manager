@@ -23,7 +23,7 @@
   <form method="post" action="{{ url_for('main.documents') }}" enctype="multipart/form-data" class="inline">
     <input type="hidden" name="tenant_id" value="{{ t.id }}"><input type="hidden" name="back" value="{{ request.full_path }}">
     {% if leases %}<input type="hidden" name="property_id" value="{{ leases[0].property_id }}">{% endif %}
-    <label>File<input type="file" name="file" required></label>
+    <label>File<input type="file" name="file" required data-max-mb="{{ max_upload_mb }}"></label>
     <label>Title<input name="title"></label>
     <label>Category<select name="category">{% for c in doc_categories %}<option {{ 'selected' if c == 'Lease agreement' }}>{{ c }}</option>{% endfor %}</select></label>
     <label>Expires<input type="date" name="expires_on"></label>
