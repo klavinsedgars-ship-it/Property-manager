@@ -135,3 +135,10 @@ def test_roi_counts_money_topped_up_for_mortgage():
     assert m.own_cash == pytest.approx(3000)
     assert m.extra["topped_up"] == pytest.approx(payments, rel=0.01)
     assert m.extra["cash_invested"] == pytest.approx(3000 + payments, rel=0.01)
+
+
+def test_unlinked_rent_payments_count_for_the_active_lease():
+    lease = {"id": 9, "start_date": "2026-08-01", "end_date": None, "rent": 530}
+    txs = [tx("2026-08-15", "Rent", 530), tx("2026-09-15", "Rent", 530)]   # imported, no lease_id
+    due = {r["month"]: r["due"] for r in fin.rent_roll([lease], txs, date(2026, 10, 18))}
+    assert due == {"2026-08": 0, "2026-09": 0, "2026-10": 530}

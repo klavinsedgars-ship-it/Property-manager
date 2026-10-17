@@ -215,8 +215,11 @@ def rent_roll(leases, txs, today: date) -> list[dict]:
     received = defaultdict(float)
     for t in txs:
         if t["kind"] == "income" and t["category"] == "Rent":
-            key = (t["lease_id"], t["date"][:7])
-            received[key] += float(t["amount"])
+            month, lease_id = t["date"][:7], t["lease_id"]
+            if not lease_id:   # unlinked payment (e.g. imported): credit the lease running that month
+                active = [l for l in leases if lease_active_in_month(l, month)]
+                lease_id = active[0]["id"] if len(active) == 1 else None
+            received[(lease_id, month)] += float(t["amount"])
     out = []
     for l in leases:
         s = to_date(l["start_date"])

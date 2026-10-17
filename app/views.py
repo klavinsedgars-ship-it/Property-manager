@@ -24,7 +24,7 @@ NUMERIC = {"expected_rent", "area_m2", "rooms", "purchase_price", "purchase_cost
            "loan_term_months", "sale_price", "sale_costs", "declared_residence"}
 
 KINDS = ["apartment", "house", "basement", "commercial", "land", "parking"]
-STATUSES = ["renovating", "rented", "vacant", "own_use", "sold"]
+STATUSES = ["renovating", "rented", "vacant", "for_sale", "own_use", "sold"]
 # Common Latvian building series — affects market value comparisons.
 SERIES = ["", "Pre-war", "Stalin era", "Khrushchev (103/316/318)", "Lithuanian project", "119", "467",
           "602", "104", "Small-family", "Renovated pre-war", "New project (post-2000)", "Private house", "Other"]

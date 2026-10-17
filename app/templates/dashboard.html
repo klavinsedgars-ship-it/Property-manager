@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="head">
-  <div><h1>Portfolio</h1><div class="sub">{{ t.count }} active propert{{ 'y' if t.count == 1 else 'ies' }}{% if t.sold_count %} · {{ t.sold_count }} sold{% endif %}</div></div>
+  <div><h1>Portfolio</h1><div class="sub">{{ t.count }} active propert{{ 'y' if t.count == 1 else 'ies' }}{% if t.sold_count %} · {{ t.sold_count }} sold{% endif %}{% if t.own_use_count %} · {{ t.own_use_count }} for own use (not in returns){% endif %}</div></div>
   <a class="btn" href="{{ url_for('main.property_new') }}">+ Add property</a>
 </div>
 

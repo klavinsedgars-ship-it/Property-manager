@@ -98,3 +98,4 @@ details summary { cursor: pointer; color: var(--accent); }
 .badge.v-fair { color: var(--warn); border-color: var(--warn); }
 .badge.v-poor { color: var(--bad); border-color: var(--bad); }
 .warn { color: var(--warn); }
+.badge.for_sale { color: var(--accent); border-color: var(--accent); }

@@ -62,10 +62,12 @@ def portfolio_totals(bundles):
     keys = ["cost_basis", "own_cash", "value", "loan_balance", "equity", "income_total", "opex_total",
             "cash_flow_total", "rent_monthly", "income_12m", "opex_12m", "noi_12m", "debt_service_12m",
             "unrealized_gain", "total_return", "capex"]
-    active = [b for b in bundles if not b["m"].sold]
+    # Own-use property (e.g. your home) is not an investment — keep it out of returns and yields.
+    active = [b for b in bundles if not b["m"].sold and b["p"]["status"] != "own_use"]
     t = {k: sum(getattr(b["m"], k) for b in active) for k in keys}
     t["count"] = len(active)
-    t["sold_count"] = len(bundles) - len(active)
+    t["sold_count"] = sum(1 for b in bundles if b["m"].sold)
+    t["own_use_count"] = sum(1 for b in bundles if not b["m"].sold and b["p"]["status"] == "own_use")
     t["realized"] = sum(b["m"].realized_profit or 0 for b in bundles if b["m"].sold)
     # Yields over income-producing properties only (renovating / empty ones would dilute them).
     earning = [b["m"] for b in active if b["m"].gross_yield]
