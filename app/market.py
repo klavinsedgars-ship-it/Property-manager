@@ -5,9 +5,7 @@ Sources
 * CSP (Central Statistical Bureau) — house price index, table PCI050c,
   PxWeb API v2 https://api.stat.gov.lv/api/v2 (fallback: v1 data.stat.gov.lv).
 * ECB Data Portal — monthly Euribor 3M/6M/12M (SDMX, CSV).
-* data.gov.lv (CKAN) — State Land Service (VZD) NĪTIS open data: registered
-  real-estate transaction prices. Datasets are discovered via the CKAN API and
-  imported into `market_deals`; a CSV downloaded manually can be imported too.
+* data.gov.lv (CKAN) — State Land Service (VZD) open data, see vzd.py.
 
 Everything is cached in SQLite, so the app works offline after one refresh.
 """
@@ -21,7 +19,6 @@ import statistics
 import unicodedata
 import urllib.parse
 import urllib.request
-import zipfile
 from datetime import date, datetime
 
 from . import finance as fin
@@ -186,7 +183,7 @@ def fetch_euribor(db):
     return f"Euribor 3M/6M/12M, {n} months"
 
 
-# --------------------------------------------------------------------------- data.gov.lv / VZD
+# --------------------------------------------------------------------------- data.gov.lv (CKAN)
 
 def ckan(action, **params):
     url = CKAN + action + "?" + urllib.parse.urlencode(params)
@@ -196,160 +193,13 @@ def ckan(action, **params):
     return d["result"]
 
 
-def discover_vzd(db):
-    """Find VZD transaction-price datasets on data.gov.lv and remember their resources."""
-    found = []
-    seen = set()
-    for q in ("darījumu cenas", "darījumi", "NĪTIS", "tirgus"):
-        res = ckan("package_search", q=q, fq="organization:valsts-zemes-dienests", rows=50)
-        for pkg in res["results"]:
-            if pkg["id"] in seen:
-                continue
-            seen.add(pkg["id"])
-            for r in pkg.get("resources", []):
-                fmt = (r.get("format") or "").upper()
-                if fmt not in ("CSV", "ZIP", "XLSX") and not r.get("url", "").lower().endswith((".csv", ".zip")):
-                    continue
-                found.append({"package": pkg["title"], "package_name": pkg["name"], "name": r.get("name") or "",
-                              "url": r["url"], "format": fmt, "modified": (r.get("last_modified") or
-                                                                           r.get("created") or "")[:10]})
-    found.sort(key=lambda r: (r["package"], r["modified"]), reverse=True)
-    _meta_set(db, "vzd_resources", json.dumps(found))
-    db.commit()
-    return f"{len(found)} VZD files found on data.gov.lv"
-
-
-# Header keyword matching — VZD headers are Latvian; matched without diacritics.
-COLS = {
-    "date": [["darijuma datums"], ["datums"], ["date"]],
-    "price": [["darijuma summa"], ["darijuma cena"], ["summa"], ["cena", "eur"], ["cena"], ["price"]],
-    "area": [["telpu grupas platiba"], ["kopplatiba"], ["platiba"], ["area"]],
-    "territory": [["novads"], ["pilseta"], ["teritorij"], ["administrativ"], ["municipal"]],
-    "address": [["adrese"], ["address"]],
-    "cadastre": [["kadastra numurs"], ["kadastra apzimejums"], ["kadastr"]],
-    "rooms": [["istabu"], ["rooms"]],
-    "floor": [["stavs"], ["floor"]],
-    "kind": [["lietosanas veids"], ["telpu grupas veids"], ["objekta veids"], ["veids"]],
-}
-
-
-def map_columns(header: list[str]) -> dict[str, int]:
-    norm = [_norm(h) for h in header]
-    out = {}
-    for field, options in COLS.items():
-        for words in options:
-            hit = next((i for i, h in enumerate(norm) if all(w in h for w in words) and i not in out.values()),
-                       None)
-            if hit is not None:
-                out[field] = hit
-                break
-    return out
-
-
-def _to_float(v):
-    if v is None:
-        return None
-    s = str(v).strip().replace(" ", "").replace(" ", "").replace("€", "")
-    if not s:
-        return None
-    if "," in s and "." in s:
-        s = s.replace(".", "").replace(",", ".") if s.rfind(",") > s.rfind(".") else s.replace(",", "")
-    else:
-        s = s.replace(",", ".")
-    try:
-        return float(s)
-    except ValueError:
-        return None
-
-
-def _to_date(v):
-    s = str(v or "").strip()[:10]
-    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y.%m.%d"):
-        try:
-            return datetime.strptime(s, fmt).date().isoformat()
-        except ValueError:
-            pass
-    return None
-
-
-def _decode(raw: bytes) -> str:
-    for enc in ("utf-8-sig", "cp1257", "latin-1"):
-        try:
-            return raw.decode(enc)
-        except UnicodeDecodeError:
-            continue
-    return raw.decode("utf-8", "ignore")
-
-
-def import_deals_bytes(db, raw: bytes, source: str) -> str:
-    """Import a VZD transactions CSV (or a ZIP of CSVs). Returns a summary."""
-    texts = []
-    if raw[:2] == b"PK":
-        with zipfile.ZipFile(io.BytesIO(raw)) as z:
-            texts = [_decode(z.read(n)) for n in z.namelist() if n.lower().endswith(".csv")]
-    else:
-        texts = [_decode(raw)]
-    added = skipped = 0
-    batch = []
-    for text in texts:
-        sample = text[:5000]
-        try:
-            dialect = csv.Sniffer().sniff(sample, delimiters=";,\t|")
-        except csv.Error:
-            dialect = csv.excel
-            dialect.delimiter = ";" if sample.count(";") > sample.count(",") else ","
-        reader = csv.reader(io.StringIO(text), dialect)
-        header = next(reader, None)
-        if not header:
-            continue
-        cols = map_columns(header)
-        if not {"price", "area"} <= cols.keys():
-            raise RuntimeError(f"Could not find price/area columns in header: {header[:15]}")
-        get = lambda row, k: row[cols[k]] if k in cols and cols[k] < len(row) else None  # noqa: E731
-        for row in reader:
-            price, area = _to_float(get(row, "price")), _to_float(get(row, "area"))
-            if not price or not area or area < 8:
-                skipped += 1
-                continue
-            ppm = price / area
-            if not 50 <= ppm <= 15000:   # shares, symbolic prices, data errors
-                skipped += 1
-                continue
-            rooms = _to_float(get(row, "rooms"))
-            batch.append((source, _to_date(get(row, "date")), price, area, round(ppm, 2),
-                          (get(row, "territory") or "").strip() or None, (get(row, "address") or "").strip() or None,
-                          (get(row, "cadastre") or "").strip(), int(rooms) if rooms else None,
-                          get(row, "floor"), get(row, "kind")))
-            if len(batch) >= 2000:
-                added += _insert_deals(db, batch)
-                batch = []
-        added += _insert_deals(db, batch)
-    db.commit()
-    return f"Imported {added} deals ({skipped} skipped as incomplete/outliers)"
-
-
-def _insert_deals(db, rows) -> int:
-    """Batch insert; duplicates (same deal re-imported) are ignored. Returns rows added."""
-    if not rows:
-        return 0
-    cur = db.executemany("""INSERT INTO market_deals (source, deal_date, price, area_m2, price_m2, territory,
-                            address, cadastre_no, rooms, floor, kind) VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                            ON CONFLICT DO NOTHING""", rows)
-    return max(cur.rowcount, 0)
-
-
-def import_deals_url(db, url: str) -> str:
-    if not url.startswith("https://data.gov.lv/") and not url.startswith("https://www.vzd.gov.lv/"):
-        raise RuntimeError("Only data.gov.lv / vzd.gov.lv URLs are allowed")
-    return import_deals_bytes(db, _get(url, timeout=300), url.rsplit("/", 1)[-1])
-
-
 # --------------------------------------------------------------------------- refresh
 
 def refresh_all(db):
     out = []
+    from . import vzd
     for name, fn in (("House price index (CSP)", fetch_hpi), ("Euribor (ECB)", fetch_euribor),
-                     ("VZD datasets (data.gov.lv)", discover_vzd)):
+                     ("VZD datasets (data.gov.lv)", vzd.discover), ("VZD official statistics", vzd.sync_stats)):
         try:
             out.append((name, True, fn(db)))
         except Exception as e:  # network errors are shown to the user, never fatal
@@ -412,31 +262,10 @@ def index_estimate(db, p, capex):
     return v, f"index estimate ({name.replace('hpi_', '')} dwellings, {now_period})"
 
 
-def _city_match(p) -> str:
-    return _norm(p["city"] or "").split(" ")[0][:5]
-
-
-def comparables(db, p, months=24):
-    """Recent registered deals in the same city with similar size."""
-    if not p["area_m2"]:
-        return []
-    since = fin.add_months(date.today(), -months).isoformat()
-    key = _city_match(p)
-    area = float(p["area_m2"])
-    rows = db.execute("""SELECT * FROM market_deals WHERE deal_date >= ? AND area_m2 BETWEEN ? AND ?
-                         ORDER BY deal_date DESC LIMIT 5000""", (since, area * 0.7, area * 1.3)).fetchall()
-    out = [r for r in rows if key and key in _norm((r["territory"] or "") + " " + (r["address"] or ""))]
-    if p["district"]:
-        dk = _norm(p["district"])[:5]
-        local = [r for r in out if dk in _norm(r["address"] or "")]
-        if len(local) >= 5:
-            return local
-    return out
-
-
 def property_market_context(db, p, m):
     ctx = {"has_data": False}
-    comps = comparables(db, p)
+    from . import vzd
+    comps = vzd.comparables(db, p)
     if comps:
         ppm = [r["price_m2"] for r in comps]
         med = statistics.median(ppm)
@@ -463,26 +292,11 @@ def property_market_context(db, p, m):
     return ctx
 
 
-def city_ppm_trend(db, city_key, kind_hint=None):
-    """Median €/m² per quarter for deals matching city."""
-    rows = db.execute("SELECT deal_date, price_m2, territory, address FROM market_deals WHERE deal_date IS NOT NULL")
-    buckets: dict[str, list] = {}
-    for r in rows:
-        if city_key and city_key not in _norm((r["territory"] or "") + " " + (r["address"] or "")):
-            continue
-        buckets.setdefault(_quarter(fin.to_date(r["deal_date"])), []).append(r["price_m2"])
-    return [(q, statistics.median(v), len(v)) for q, v in sorted(buckets.items()) if len(v) >= 5]
-
-
 def overview(db):
-    res = json.loads(_meta_get(db, "vzd_resources", "[]"))
-    terr = db.execute("""SELECT territory, count(*) n, min(deal_date) d0, max(deal_date) d1
-                         FROM market_deals GROUP BY territory ORDER BY n DESC LIMIT 15""").fetchall()
-    cities = [r["city"] for r in db.execute("SELECT DISTINCT city FROM properties WHERE city IS NOT NULL")]
-    trends = {c: city_ppm_trend(db, _norm(c).split(" ")[0][:5]) for c in cities}
+    from . import vzd
     return {"hpi": series(db, "hpi_total"), "hpi_new": series(db, "hpi_new"),
             "hpi_existing": series(db, "hpi_existing"), "euribor6": series(db, "euribor_6m")[-60:],
             "euribor3": series(db, "euribor_3m")[-60:], "euribor12": series(db, "euribor_12m")[-60:],
-            "resources": res, "territories": terr, "trends": trends,
-            "deals": db.execute("SELECT count(*) FROM market_deals").fetchone()[0],
+            "coverage": vzd.coverage(db), "sales_resources": vzd.meta_get(db, "sales_resources", []),
+            "stat_tables": vzd.stat_tables(db), "last_import": vzd.meta_get(db, "last_import"),
             "last_refresh": _meta_get(db, "last_refresh"), "bench": BENCHMARKS}

@@ -104,20 +104,37 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT
 );
 
--- Individual market transactions (VZD NĪTIS open data from data.gov.lv, or user-imported CSV).
-CREATE TABLE IF NOT EXISTS market_deals (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    source      TEXT,
-    deal_date   TEXT,
-    price       REAL,
-    area_m2     REAL,
-    price_m2    REAL,
-    territory   TEXT,       -- municipality / city as in source
-    address     TEXT,
-    cadastre_no TEXT,
-    rooms       INTEGER,
-    floor       TEXT,
-    kind        TEXT,
-    UNIQUE (source, deal_date, cadastre_no, price, area_m2)
+-- Registered sales from VZD NĪTIS open data (data.gov.lv). One row per sold object.
+CREATE TABLE IF NOT EXISTS sales (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind         TEXT NOT NULL,       -- apartment | house | land
+    deal_ref     TEXT,                -- VZD deal id (DeaId)
+    deal_date    TEXT NOT NULL,
+    price        REAL NOT NULL,
+    area_m2      REAL NOT NULL,       -- apartment / building area; land area for land
+    price_m2     REAL NOT NULL,
+    territory    TEXT,                -- city / municipality
+    address      TEXT,
+    cadastre_no  TEXT NOT NULL DEFAULT '',
+    rooms        INTEGER,
+    floor        TEXT,
+    floors_total INTEGER,
+    build_year   INTEGER,
+    land_area_m2 REAL,
+    source       TEXT,
+    UNIQUE (kind, deal_date, cadastre_no, price, area_m2)
 );
-CREATE INDEX IF NOT EXISTS ix_deals_terr ON market_deals(territory, deal_date);
+CREATE INDEX IF NOT EXISTS ix_sales_terr ON sales(kind, territory, deal_date);
+CREATE INDEX IF NOT EXISTS ix_sales_date ON sales(kind, deal_date);
+
+-- Official VZD statistics tables (average prices etc.), stored as published.
+CREATE TABLE IF NOT EXISTS stat_tables (
+    name        TEXT PRIMARY KEY,
+    grp         TEXT,
+    url         TEXT,
+    header      TEXT,
+    rows        TEXT,
+    fetched_at  TEXT
+);
+
+DROP TABLE IF EXISTS market_deals;   -- replaced by `sales`

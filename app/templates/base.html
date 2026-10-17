@@ -19,7 +19,8 @@
     <a href="{{ url_for('main.analytics') }}" class="{{ 'on' if ep == 'main.analytics' }}">Analytics</a>
     <a href="{{ url_for('main.tenants') }}" class="{{ 'on' if 'tenant' in ep }}">Tenants</a>
     <a href="{{ url_for('main.documents') }}" class="{{ 'on' if 'document' in ep }}">Documents</a>
-    <a href="{{ url_for('main.market_view') }}" class="{{ 'on' if 'market' in ep }}">Market data</a>
+    <a href="{{ url_for('main.sales') }}" class="{{ 'on' if ep in ('main.sales', 'main.stats') }}">Sold properties</a>
+    <a href="{{ url_for('main.market_view') }}" class="{{ 'on' if ep in ('main.market_view',) }}">Market data</a>
     <a href="{{ url_for('main.settings_view') }}" class="{{ 'on' if 'settings' in ep or ep == 'main.status' }}">Settings</a>
   </nav>
   <main>

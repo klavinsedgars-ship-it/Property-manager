@@ -8,6 +8,7 @@ from . import finance as fin
 from . import market
 from . import services as svc
 from . import storage
+from . import vzd
 from .db import get_db, set_setting, settings
 
 bp = Blueprint("main", __name__)
@@ -486,25 +487,85 @@ def settings_view():
 
 @bp.route("/market/import", methods=["POST"])
 def market_import():
+    """Import one VZD sales file (by URL or upload). Returns JSON for the progress UI."""
     db = get_db()
     try:
         f = request.files.get("file")
         if f and f.filename:
-            msg = market.import_deals_bytes(db, f.read(), f.filename)
+            added, report = vzd.import_bytes(db, f.read(), f.filename)
         else:
-            msg = market.import_deals_url(db, request.form.get("url", ""))
-        flash(msg)
+            added, report = vzd.import_url(db, request.form.get("url", ""))
+        ok, msg = True, f"+{added:,} sales imported"
     except Exception as e:
-        flash(f"Import failed — {e}", "error")
+        db.rollback()
+        ok, msg, report = False, f"Import failed — {e}", []
+    if request.accept_mimetypes.best == "application/json":
+        return {"ok": ok, "message": msg, "report": report}
+    flash(msg, "ok" if ok else "error")
+    for line in report:
+        flash(line)
+    return redirect(url_for("main.market_view"))
+
+
+@bp.route("/market/discover", methods=["POST"])
+def market_discover():
+    db = get_db()
+    for name, fn in (("Datasets", vzd.discover), ("Official statistics", vzd.sync_stats)):
+        try:
+            flash(f"{name}: {fn(db)}")
+        except Exception as e:
+            db.rollback()
+            flash(f"{name}: failed — {e}", "error")
     return redirect(url_for("main.market_view"))
 
 
 @bp.route("/market/clear", methods=["POST"])
 def market_clear():
-    get_db().execute("DELETE FROM market_deals")
+    get_db().execute("DELETE FROM sales")
     get_db().commit()
-    flash("Imported deals cleared")
+    flash("Imported sales cleared")
     return redirect(url_for("main.market_view"))
+
+
+def _sales_filters():
+    f = {k: (request.args.get(k) or "").strip() for k in vzd.FILTERS}
+    if "kind" not in request.args:
+        f["kind"] = "apartment"
+    if "since" not in request.args:
+        f["since"] = fin.add_months(date.today(), -12).isoformat()
+    return f
+
+
+@bp.route("/market/sales")
+def sales():
+    db = get_db()
+    f = _sales_filters()
+    stat_rows = vzd.query(db, f, columns=vzd.STAT_COLS)
+    return render_template("sales.html", f=f, rows=vzd.query(db, f, limit=200), total=len(stat_rows),
+                           s=vzd.summarize(stat_rows),
+                           territories=vzd.territories(db, f["kind"] or None), kinds=vzd.KINDS,
+                           coverage=vzd.coverage(db))
+
+
+@bp.route("/market/sales.csv")
+def sales_csv():
+    rows = vzd.query(get_db(), _sales_filters())
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    cols = ["deal_date", "kind", "territory", "address", "cadastre_no", "area_m2", "rooms", "floor", "floors_total",
+            "build_year", "price", "price_m2", "land_area_m2"]
+    w.writerow(cols)
+    w.writerows([[r[c] for c in cols] for r in rows])
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=sales.csv"})
+
+
+@bp.route("/market/stats")
+def stats():
+    db = get_db()
+    tables = vzd.stat_tables(db)
+    name = request.args.get("t") or (tables[0]["name"] if tables else None)
+    return render_template("stats.html", tables=tables, t=vzd.stat_table(db, name) if name else None)
 
 
 @bp.route("/status")

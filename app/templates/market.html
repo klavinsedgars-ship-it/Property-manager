@@ -9,7 +9,7 @@
   {% if ctx.hpi %}<div class="kpi"><div class="l">House price index (CSP)</div><div class="v">{{ ctx.hpi[-1][1]|round(1) }}</div><div class="h">{{ ctx.hpi[-1][0] }}{% if ctx.hpi|length > 4 %} · {{ ((ctx.hpi[-1][1] / ctx.hpi[-5][1]) - 1)|pct }} y/y{% endif %}</div></div>{% endif %}
   <div class="kpi"><div class="l">Price growth used in projections</div><div class="v">{{ rate|pct }}</div><div class="h">{{ why }}</div></div>
   {% if ctx.euribor6 %}<div class="kpi"><div class="l">6M Euribor (ECB)</div><div class="v">{{ ctx.euribor6[-1][1]|round(2) }}%</div><div class="h">{{ ctx.euribor6[-1][0] }}</div></div>{% endif %}
-  <div class="kpi"><div class="l">VZD deals imported</div><div class="v">{{ ctx.deals|num }}</div><div class="h">for comparables</div></div>
+  <div class="kpi"><div class="l">Registered sales imported</div><div class="v">{{ ctx.coverage|sum(attribute='n')|num }}</div><div class="h"><a href="{{ url_for('main.sales') }}">Explore sold properties →</a></div></div>
   <div class="kpi"><div class="l">Gross yield benchmark</div><div class="v">{{ ctx.bench.gross_yield['Rīga']|pct }}</div><div class="h">Rīga · {{ ctx.bench.gross_yield._src }}</div></div>
 </div>
 
@@ -18,32 +18,55 @@
   <div class="card"><h2>Euribor</h2>{% if ctx.euribor6 %}<div class="chart"><canvas id="eur"></canvas></div><p class="note">Monthly averages, ECB Data Portal. Most Latvian mortgages float on 6M Euribor + margin.</p>{% else %}<p class="note">Not loaded yet — press Refresh.</p>{% endif %}</div>
 </div>
 
-{% for city, tr in ctx.trends.items() if tr %}
-<div class="card"><h2>{{ city }} — median €/m² from registered deals</h2><div class="chart"><canvas id="tr{{ loop.index }}"></canvas></div></div>
-<script>pmLine("tr{{ loop.index }}", {{ tr|map(attribute=0)|list|tojson }}, [{label: "Median €/m²", data: {{ tr|map(attribute=1)|list|tojson }}}]);</script>
-{% endfor %}
-
 <div class="card">
-  <h2>Registered transactions (VZD via data.gov.lv)</h2>
-  <p class="note">The State Land Service publishes every registered real-estate deal as open data on <a href="https://data.gov.lv/dati/lv/organization/valsts-zemes-dienests" target="_blank">data.gov.lv</a>. Import the apartment (telpu grupu) files for the periods you care about — they power the comparables on each property page.</p>
-  {% if ctx.resources %}
-    <div class="scroll"><table>
-      <tr><th>Dataset</th><th>File</th><th>Format</th><th>Updated</th><th></th></tr>
-      {% for r in ctx.resources[:60] %}
-        <tr><td>{{ r.package }}</td><td><a href="{{ r.url }}" target="_blank">{{ r.name or r.url.rsplit('/',1)[-1] }}</a></td><td>{{ r.format }}</td><td>{{ r.modified }}</td>
-          <td class="n">{% if r.format in ('CSV', 'ZIP') or r.url.lower().endswith(('.csv', '.zip')) %}<form method="post" action="{{ url_for('main.market_import') }}"><input type="hidden" name="url" value="{{ r.url }}"><button class="ghost">Import</button></form>{% endif %}</td></tr>
+  <div class="head" style="margin-bottom:8px">
+    <div><h2>Registered sales — State Land Service (VZD)</h2>
+      <p class="note">Every purchase registered in the Land Book since 2012: apartments, houses and land, with price, area, rooms, floor and build year. Published on <a href="https://data.gov.lv/dati/lv/dataset/nekustama-ipasuma-tirgus-datu-bazes-atvertie-dati" target="_blank">data.gov.lv</a>, updated monthly.</p></div>
+    <form method="post" action="{{ url_for('main.market_discover') }}"><button class="ghost">↻ Find datasets</button></form>
+  </div>
+  {% if ctx.coverage %}
+    <table>
+      <tr><th>Imported</th><th class="n">Sales</th><th>Period</th></tr>
+      {% for c in ctx.coverage %}<tr><td><a href="{{ url_for('main.sales', kind=c.kind) }}">{{ {'apartment': 'Apartments', 'house': 'Houses', 'land': 'Land'}[c.kind] }}</a></td><td class="n">{{ c.n|num }}</td><td class="note">{{ c.d0 }} → {{ c.d1 }}</td></tr>{% endfor %}
+    </table>
+  {% endif %}
+  {% if ctx.sales_resources %}
+    <h3>Available files</h3>
+    <div class="inline" style="margin-bottom:8px">
+      <button id="imp3" onclick="pmImport(3)">Import latest 3 years</button>
+      <button class="ghost" onclick="pmImport(99)">Import everything</button>
+      <span class="note" id="impstatus"></span>
+    </div>
+    <div class="scroll"><table id="restable">
+      <tr><th>File</th><th>Year</th><th>Updated</th><th></th></tr>
+      {% for r in ctx.sales_resources %}
+        <tr data-url="{{ r.url }}" data-year="{{ r.year or '' }}"><td><a href="{{ r.url }}" target="_blank">{{ r.name }}</a><br><span class="note">{{ r.package }}</span></td><td>{{ r.year or '' }}</td><td class="note">{{ r.modified }}</td>
+          <td class="n"><button class="ghost" onclick="pmImportRow(this.closest('tr'))">Import</button> <span class="note st"></span></td></tr>
       {% endfor %}
     </table></div>
-  {% else %}<p class="note">Press “Refresh market data” to list the available VZD files.</p>{% endif %}
-  <h3>Or upload a file you downloaded</h3>
-  <form method="post" action="{{ url_for('main.market_import') }}" enctype="multipart/form-data" class="inline">
-    <input type="file" name="file" accept=".csv,.zip" required data-max-mb="{{ max_upload_mb }}"><button>Import CSV / ZIP</button>
-  </form>
-  {% if ctx.territories %}
-    <h3>Imported by territory</h3>
-    <table>{% for t in ctx.territories %}<tr><td>{{ t.territory or '—' }}</td><td class="n">{{ t.n|num }} deals</td><td class="note">{{ t.d0 }} → {{ t.d1 }}</td></tr>{% endfor %}</table>
-    <form method="post" action="{{ url_for('main.market_clear') }}" onsubmit="return confirm('Remove all imported deals?')" style="margin-top:8px"><button class="link">Clear imported deals</button></form>
+  {% else %}
+    <p class="note">Press <b>Find datasets</b> to list the files available on data.gov.lv.</p>
   {% endif %}
+  <details style="margin-top:10px"><summary>Upload a file manually</summary>
+    <form method="post" action="{{ url_for('main.market_import') }}" enctype="multipart/form-data" class="inline" style="margin-top:8px">
+      <input type="file" name="file" accept=".csv,.zip" required data-max-mb="{{ max_upload_mb }}"><button>Import CSV / ZIP</button>
+    </form>
+  </details>
+  {% if ctx.last_import %}
+    <details style="margin-top:10px"><summary>Last import report ({{ ctx.last_import.name }}, {{ ctx.last_import.at }})</summary>
+      <ul class="note">{% for line in ctx.last_import.report %}<li>{{ line }}</li>{% endfor %}</ul>
+    </details>
+  {% endif %}
+  {% if ctx.coverage %}
+    <form method="post" action="{{ url_for('main.market_clear') }}" onsubmit="return confirm('Remove all imported sales?')" style="margin-top:8px"><button class="link">Clear imported sales</button></form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Official average prices</h2>
+  {% if ctx.stat_tables %}
+    <p class="note">{{ ctx.stat_tables|length }} tables from the State Land Service (average apartment and house prices by city and district, market indicators). <a href="{{ url_for('main.stats') }}">Open →</a></p>
+  {% else %}<p class="note">Downloaded together with <b>Find datasets</b>.</p>{% endif %}
 </div>
 
 <div class="card">
@@ -66,7 +89,7 @@ pmLine("hpi", {{ ctx.hpi|map(attribute=0)|list|tojson }}, [
   {label: "All dwellings", data: {{ ctx.hpi|map(attribute=1)|list|tojson }}},
   {% if ctx.hpi_new %}{label: "New", data: {{ ctx.hpi_new|map(attribute=1)|list|tojson }}},{% endif %}
   {% if ctx.hpi_existing %}{label: "Existing", data: {{ ctx.hpi_existing|map(attribute=1)|list|tojson }}},{% endif %}
-], {pct: false});
+], {plain: true});
 {% endif %}
 {% if ctx.euribor6 %}
 pmLine("eur", {{ ctx.euribor6|map(attribute=0)|list|tojson }}, [
@@ -75,5 +98,36 @@ pmLine("eur", {{ ctx.euribor6|map(attribute=0)|list|tojson }}, [
   {label: "12M", data: {{ ctx.euribor12|map(attribute=1)|list|tojson }}},
 ], {pct: true});
 {% endif %}
+// Import VZD files one by one (one request each keeps every call well within server time limits).
+async function pmImportRow(tr) {
+  const st = tr.querySelector(".st");
+  st.textContent = "importing…";
+  const body = new FormData();
+  body.append("url", tr.dataset.url);
+  try {
+    const r = await fetch("{{ url_for('main.market_import') }}", {method: "POST", body, headers: {Accept: "application/json"}});
+    const j = await r.json();
+    st.textContent = j.message;
+    st.title = (j.report || []).join("\n");
+    st.className = "note st " + (j.ok ? "pos" : "neg");
+    return j.ok;
+  } catch (e) {
+    st.textContent = "failed — " + e;
+    st.className = "note st neg";
+    return false;
+  }
+}
+async function pmImport(years) {
+  const rows = [...document.querySelectorAll("#restable tr[data-url]")];
+  const newest = Math.max(...rows.map((r) => +r.dataset.year || 0));
+  const pick = rows.filter((r) => !r.dataset.year || +r.dataset.year > newest - years);
+  const status = document.getElementById("impstatus");
+  for (let i = 0; i < pick.length; i++) {
+    status.textContent = `Importing ${i + 1} of ${pick.length}… keep this page open`;
+    await pmImportRow(pick[i]);
+  }
+  status.textContent = "Done.";
+  setTimeout(() => location.reload(), 1500);
+}
 </script>
 {% endblock %}

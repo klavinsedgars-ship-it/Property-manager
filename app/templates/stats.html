@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Official statistics · Property Manager{% endblock %}
+{% block content %}
+<div class="head">
+  <div><h1>Official average prices</h1><div class="sub">Tables published by the State Land Service on data.gov.lv, shown as published.</div></div>
+  <a class="btn ghost" href="{{ url_for('main.sales') }}">Sold properties</a>
+</div>
+{% if not tables %}
+  <div class="card empty">Nothing downloaded yet. Go to <a href="{{ url_for('main.market_view') }}">Market data</a> and press <b>Find datasets</b>.</div>
+{% else %}
+<div class="card">
+  <form method="get" class="inline">
+    <label>Table<select name="t" onchange="this.form.submit()">
+      {% for g in tables|groupby('grp') %}<optgroup label="{{ g.grouper or 'Other' }}">
+        {% for x in g.list %}<option value="{{ x.name }}" {{ 'selected' if t and t.name == x.name }}>{{ x.name }}</option>{% endfor %}
+      </optgroup>{% endfor %}
+    </select></label>
+  </form>
+</div>
+{% if t %}
+  {% if t.series %}<div class="card"><h2>{{ t.name }}</h2><div class="chart"><canvas id="st"></canvas></div></div>{% endif %}
+  <div class="card scroll">
+    <table>
+      <tr>{% for h in t.header %}<th>{{ h }}</th>{% endfor %}</tr>
+      {% for r in t.rows[:500] %}<tr>{% for c in r %}<td>{{ c }}</td>{% endfor %}</tr>{% endfor %}
+    </table>
+    <p class="note">Source: <a href="{{ t.url }}" target="_blank">{{ t.url }}</a> · downloaded {{ t.fetched_at }}</p>
+  </div>
+  {% if t.series %}
+  <script>pmLine("st", {{ t.labels|tojson }}, {{ t.series|tojson }}, {plain: true});</script>
+  {% endif %}
+{% endif %}
+{% endif %}
+{% endblock %}
