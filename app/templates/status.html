@@ -7,6 +7,7 @@
     <tr><td>Database</td><td class="{{ 'pos' if backend == 'PostgreSQL' and not db_error else 'neg' }}">{{ backend }}{% if st.database %} — from <code>{{ st.database }}</code>{% endif %}</td></tr>
     <tr><td>Database connection</td><td class="{{ 'neg' if db_error else 'pos' }}">{{ db_error or 'OK' }}</td></tr>
     <tr><td>Document storage</td><td class="{{ 'pos' if blob else 'neg' }}">{% if blob %}Vercel Blob — from <code>{{ st.blob }}</code>{% else %}local folder (temporary on Vercel){% endif %}</td></tr>
+    {% if blob %}<tr><td>Blob access</td><td class="{{ 'pos' if blob_auth_ok else 'neg' }}">{{ 'OK — credentials available' if blob_auth_ok else 'no access token in this request (Vercel OIDC). Check Settings → Security → OIDC Federation is enabled, then redeploy.' }}</td></tr>{% endif %}
     <tr><td>Password (PM_PASSWORD)</td><td class="{{ 'pos' if password_set else 'neg' }}">{{ 'set' if password_set else 'not set — anyone with the link can open the app' }}</td></tr>
     <tr><td>Storage-related variables found</td><td>{% for n in env_names %}<code>{{ n }}</code>{{ ', ' if not loop.last }}{% else %}none{% endfor %}</td></tr>
   </table>

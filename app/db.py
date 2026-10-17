@@ -56,16 +56,38 @@ def close_db(_exc=None):
         db.close()
 
 
+def schema_version() -> str:
+    import hashlib
+    return hashlib.sha256((SCHEMA.read_text() + repr(MIGRATIONS)).encode()).hexdigest()[:16]
+
+
 def init_db(target):
+    """Create / migrate the schema. Safe when many serverless instances start at
+    once: on PostgreSQL the work runs under an advisory lock in one transaction,
+    and is skipped entirely when the stored schema version is current."""
     if not is_postgres(target):
         Path(target).parent.mkdir(parents=True, exist_ok=True)
     conn = connect(target)
-    conn.executescript(SCHEMA.read_text())
-    _migrate(conn)
-    for k, v in DEFAULT_SETTINGS.items():
-        conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING", (k, v))
-    conn.commit()
-    conn.close()
+    try:
+        version = schema_version()
+        if isinstance(conn, PgConnection):
+            conn.execute("SELECT pg_advisory_xact_lock(724001)")   # released at commit/rollback
+            if conn.execute("SELECT to_regclass('settings')").fetchone()[0]:
+                row = conn.execute("SELECT value FROM settings WHERE key = 'schema_version'").fetchone()
+                if row and row[0] == version:
+                    conn.commit()
+                    return
+        conn.executescript(SCHEMA.read_text())
+        _migrate(conn)
+        for k, v in DEFAULT_SETTINGS.items():
+            conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING", (k, v))
+        set_setting(conn, "schema_version", version)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 # Columns added after the first release: (table, column, type). Applied to older databases.

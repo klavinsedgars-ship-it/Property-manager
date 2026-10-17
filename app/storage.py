@@ -13,20 +13,48 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-from flask import Response, current_app, send_from_directory
+from flask import Response, current_app, has_request_context, request, send_from_directory
 from werkzeug.utils import secure_filename
 
 BLOB_API = "https://vercel.com/api/blob"
 BLOB_API_VERSION = "13"   # as used by @vercel/blob 2.x
 
 
+def blob_auth():
+    """(bearer token, store id) for Vercel Blob, or None when Blob is not configured.
+
+    Two ways Vercel connects a Blob store:
+    * BLOB_READ_WRITE_TOKEN (classic): vercel_blob_rw_<storeId>_<secret>
+    * BLOB_STORE_ID + Vercel OIDC (newer): a short-lived token arrives with every
+      request in the `x-vercel-oidc-token` header (or VERCEL_OIDC_TOKEN env)."""
+    token = current_app.config.get("BLOB_TOKEN")
+    if token:
+        return token, token.split("_")[3] if token.count("_") >= 4 else ""
+    store_id = current_app.config.get("BLOB_STORE_ID")
+    if store_id:
+        oidc = (has_request_context() and request.headers.get("x-vercel-oidc-token")) or os.environ.get(
+            "VERCEL_OIDC_TOKEN")
+        if not oidc and os.environ.get("VERCEL_OIDC_TOKEN_FILE"):
+            try:
+                oidc = Path(os.environ["VERCEL_OIDC_TOKEN_FILE"]).read_text().strip()
+            except OSError:
+                oidc = None
+        if oidc:
+            return oidc, store_id.removeprefix("store_")
+    return None
+
+
+def configured():
+    return bool(current_app.config.get("BLOB_TOKEN") or current_app.config.get("BLOB_STORE_ID"))
+
+
 def _blob_token():
-    return current_app.config.get("BLOB_TOKEN")
+    auth = blob_auth()
+    return auth[0] if auth else None
 
 
 def _blob_headers(extra=None):
-    token = _blob_token()
-    store_id = token.split("_")[3] if token.count("_") >= 4 else ""
+    token, store_id = blob_auth()
     return {"authorization": f"Bearer {token}", "x-api-version": BLOB_API_VERSION,
             "x-vercel-blob-store-id": store_id, **(extra or {})}
 
@@ -40,7 +68,9 @@ def _blob_request(url, method="GET", data=None, headers=None, timeout=60):
 def save(file_storage) -> str:
     """Store an uploaded werkzeug FileStorage, return its storage key."""
     name = f"{uuid.uuid4().hex}_{secure_filename(file_storage.filename) or 'file'}"
-    if _blob_token():
+    if configured():
+        if not blob_auth():
+            raise RuntimeError("Blob store is connected but no Vercel OIDC token was found for this request")
         ctype = file_storage.mimetype or mimetypes.guess_type(name)[0] or "application/octet-stream"
         body, _ = _blob_request(
             f"{BLOB_API}/?{urllib.parse.urlencode({'pathname': 'documents/' + name})}", method="PUT",

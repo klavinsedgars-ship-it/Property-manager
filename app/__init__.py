@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import os
 import re
+import time
 from pathlib import Path
 
 from flask import Flask, Response, render_template, request
@@ -46,6 +47,7 @@ def create_app(test_config=None):
         DATABASE=db_url or str(data_dir / "property.db"),
         UPLOAD_DIR=str(data_dir / "uploads"),
         BLOB_TOKEN=os.environ[blob_key] if blob_key else None,
+        BLOB_STORE_ID=os.environ.get("BLOB_STORE_ID"),
         BLOB_ACCESS=os.environ.get("PM_BLOB_ACCESS", "private"),
         MAX_CONTENT_LENGTH=50 * 1024 * 1024,
         PASSWORD=password,
@@ -57,11 +59,8 @@ def create_app(test_config=None):
         app.config.update(test_config)
     # Data would be lost on restart: warn in the UI.
     app.config["EPHEMERAL"] = on_vercel and (not dbmod.is_postgres(app.config["DATABASE"])
-                                             or not app.config["BLOB_TOKEN"])
-    try:
-        dbmod.init_db(app.config["DATABASE"])
-    except Exception as e:  # show a readable status page instead of a crashed function
-        app.config["DB_ERROR"] = f"{type(e).__name__}: {e}"
+                                             or not (app.config["BLOB_TOKEN"] or app.config["BLOB_STORE_ID"]))
+    _init_db(app)
     app.teardown_appcontext(dbmod.close_db)
     register_filters(app)
 
@@ -80,6 +79,9 @@ def create_app(test_config=None):
 
     @app.before_request
     def _db_error():
+        if app.config["DB_ERROR"] and time.time() - app.config.get("DB_RETRY_AT", 0) > 10:
+            app.config["DB_RETRY_AT"] = time.time()
+            _init_db(app, attempts=1)   # transient errors (e.g. a startup race) heal on a later request
         if app.config["DB_ERROR"] and request.endpoint not in ("static", "main.status"):
             return render_template("status.html", **status_context(app)), 503
         return None
@@ -87,6 +89,18 @@ def create_app(test_config=None):
     from .views import bp
     app.register_blueprint(bp)
     return app
+
+
+def _init_db(app, attempts=3):
+    for i in range(attempts):
+        try:
+            dbmod.init_db(app.config["DATABASE"])
+            app.config["DB_ERROR"] = None
+            return
+        except Exception as e:  # show a readable status page instead of a crashed function
+            app.config["DB_ERROR"] = f"{type(e).__name__}: {e}"
+            if i + 1 < attempts:
+                time.sleep(0.5 * (i + 1))
 
 
 def _cron_auth():
@@ -101,10 +115,22 @@ def _cron_auth():
     return None if ok else Response("Forbidden", 403)
 
 
+def _blob_auth_ok():
+    from . import storage
+    try:
+        return storage.blob_auth() is not None
+    except Exception:
+        return False
+
+
 def status_context(app):
     """Storage diagnostics — variable names only, never their values."""
     env_names = sorted(k for k in os.environ if re.search(r"DATABASE|POSTGRES|(^|_)PG|NEON|BLOB|READ_WRITE_TOKEN", k))
-    return {"st": app.config["STORAGE_STATUS"], "db_error": app.config["DB_ERROR"],
+    st = dict(app.config["STORAGE_STATUS"])
+    if not st.get("blob") and app.config.get("BLOB_STORE_ID"):
+        st["blob"] = "BLOB_STORE_ID (Vercel OIDC)"
+    return {"st": st, "db_error": app.config["DB_ERROR"],
             "backend": "PostgreSQL" if dbmod.is_postgres(app.config["DATABASE"]) else "SQLite (temporary on Vercel)",
-            "blob": bool(app.config["BLOB_TOKEN"]), "on_vercel": app.config["ON_VERCEL"],
+            "blob": bool(app.config["BLOB_TOKEN"] or app.config["BLOB_STORE_ID"]),
+            "blob_auth_ok": _blob_auth_ok(), "on_vercel": app.config["ON_VERCEL"],
             "env_names": env_names, "password_set": bool(app.config["PASSWORD"])}
