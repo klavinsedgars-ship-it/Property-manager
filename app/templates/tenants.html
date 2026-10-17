@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head">
+  <div><h1>Tenants</h1><div class="sub">Leases are created from a property's “Tenants &amp; rent” tab.</div></div>
+  <a class="btn" href="{{ url_for('main.tenant_form') }}">+ Add tenant</a>
+</div>
+<div class="card scroll">
+  <table>
+    <tr><th>Name</th><th>Phone</th><th>Email</th><th>Currently renting</th></tr>
+    {% for t in tenants %}
+      <tr><td><a href="{{ url_for('main.tenant_detail', tid=t.id) }}">{{ t.name }}</a></td><td>{{ t.phone or '' }}</td><td>{{ t.email or '' }}</td><td>{{ t.current_props or '—' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="empty">No tenants yet.</td></tr>{% endfor %}
+  </table>
+</div>
+{% endblock %}

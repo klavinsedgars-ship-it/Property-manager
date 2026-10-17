@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+{% set v = t or preset %}
+<div class="head"><div><h1>{{ 'Edit entry' if t else 'Add income / expense' }}</h1><div class="sub">{{ p.name }}</div></div></div>
+<form method="post" class="stack card" enctype="multipart/form-data" style="max-width:720px">
+  <div class="row">
+    <label>Date<input type="date" name="date" value="{{ v.date or today }}" required></label>
+    <label>Category<select name="category" id="cat" onchange="document.getElementById('leasebox').style.display = this.value === 'Rent' ? '' : 'none'">
+      <optgroup label="Income">{% for c, g in CATEGORIES if g == 'income' %}<option {{ 'selected' if v.category == c }}>{{ c }}</option>{% endfor %}</optgroup>
+      <optgroup label="Renovation / improvements (capex)">{% for c, g in CATEGORIES if g == 'capex' %}<option {{ 'selected' if v.category == c or (not v.category and p.status == 'renovating' and loop.first) }}>{{ c }}</option>{% endfor %}</optgroup>
+      <optgroup label="Running costs">{% for c, g in CATEGORIES if g == 'opex' %}<option {{ 'selected' if v.category == c }}>{{ c }}</option>{% endfor %}</optgroup>
+      <optgroup label="Tax">{% for c, g in CATEGORIES if g == 'tax' %}<option {{ 'selected' if v.category == c }}>{{ c }}</option>{% endfor %}</optgroup>
+    </select></label>
+    <label>Amount, €<input name="amount" inputmode="decimal" required value="{{ v.amount or '' }}" autofocus></label>
+  </div>
+  <div class="row">
+    <label>Description<input name="description" value="{{ v.description or '' }}" placeholder="e.g. Bathroom tiles, kitchen install"></label>
+    <label>Vendor / payee<input name="vendor" value="{{ v.vendor or '' }}" list="vendors"></label>
+  </div>
+  <div id="leasebox" class="row">
+    <label>Lease (for rent tracking)<select name="lease_id"><option value="">—</option>
+      {% for l in leases %}<option value="{{ l.id }}" {{ 'selected' if (v.lease_id|string) == (l.id|string) or (not v.lease_id and loop.first) }}>{{ l.tenant_name }} ({{ l.start_date }})</option>{% endfor %}</select></label>
+  </div>
+  <label>Receipt / invoice <span class="note">(optional, saved to Documents)</span><input type="file" name="receipt" accept="image/*,application/pdf" capture="environment"></label>
+  <div class="inline">
+    <button>Save</button>
+    {% if not t %}<button name="again" value="1" class="ghost">Save &amp; add another</button>{% endif %}
+    <a class="btn ghost" href="{{ url_for('main.property_detail', pid=p.id, tab='money') }}">Cancel</a>
+  </div>
+</form>
+{% if t %}
+<form method="post" action="{{ url_for('main.transaction_delete', tid=t.id) }}" onsubmit="return confirm('Delete entry?')"><button class="link">Delete entry</button></form>
+{% endif %}
+<script>document.getElementById('cat').dispatchEvent(new Event('change'));</script>
+{% endblock %}

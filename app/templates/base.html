@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Property Manager{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='charts.js') }}"></script>
+</head>
+<body>
+<div class="layout">
+  <nav class="side">
+    <div class="brand">🏠 Property Manager</div>
+    {% set ep = request.endpoint or '' %}
+    <a href="{{ url_for('main.dashboard') }}" class="{{ 'on' if ep == 'main.dashboard' }}">Dashboard</a>
+    <a href="{{ url_for('main.properties') }}" class="{{ 'on' if 'propert' in ep or 'transaction' in ep }}">Properties</a>
+    <a href="{{ url_for('main.analytics') }}" class="{{ 'on' if ep == 'main.analytics' }}">Analytics</a>
+    <a href="{{ url_for('main.tenants') }}" class="{{ 'on' if 'tenant' in ep }}">Tenants</a>
+    <a href="{{ url_for('main.documents') }}" class="{{ 'on' if 'document' in ep }}">Documents</a>
+    <a href="{{ url_for('main.market_view') }}" class="{{ 'on' if 'market' in ep }}">Market data</a>
+    <a href="{{ url_for('main.settings_view') }}" class="{{ 'on' if 'settings' in ep }}">Settings</a>
+  </nav>
+  <main>
+    {% for cat, msg in get_flashed_messages(with_categories=true) %}
+      <div class="flash {{ cat }}">{{ msg }}</div>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

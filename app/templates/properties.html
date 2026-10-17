@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head">
+  <div><h1>Properties</h1><div class="sub">Every unit with its cost basis, current value and returns.</div></div>
+  <a class="btn" href="{{ url_for('main.property_new') }}">+ Add property</a>
+</div>
+<div class="card scroll">
+  {% if bundles %}{% include "_property_table.html" %}{% else %}<div class="empty">No properties yet.</div>{% endif %}
+</div>
+<p class="note">Value = latest valuation you entered, otherwise purchase price moved with the CSP house price index plus improvements. ROI and IRR include a hypothetical sale today (selling costs and capital-gains tax deducted).</p>
+{% endblock %}

@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}{{ p.name }} · Property Manager{% endblock %}
+{% block content %}
+<div class="head">
+  <div>
+    <h1>{{ p.name }} <span class="badge {{ p.status }}">{{ p.status|replace('_',' ') }}</span></h1>
+    <div class="sub">{{ p.address or '' }}{% if p.city %}, {{ p.city }}{% endif %}{% if p.area_m2 %} · {{ p.area_m2|num }} m²{% endif %}{% if p.rooms %} · {{ p.rooms }} rooms{% endif %}{% if p.building_series %} · {{ p.building_series }}{% endif %}
+      {% if p.purchase_date %} · bought {{ p.purchase_date }} ({{ (m.months_owned / 12)|round(1) }} yrs){% endif %}</div>
+  </div>
+  <div class="inline">
+    <a class="btn" href="{{ url_for('main.transaction_form', pid=p.id) }}">+ Income / expense</a>
+    <a class="btn ghost" href="{{ url_for('main.property_edit', pid=p.id) }}">Edit</a>
+  </div>
+</div>
+
+<div class="tabs">
+  {% for key, label in [('overview','Overview'),('money','Income & expenses'),('tenants','Tenants & rent'),('documents','Documents'),('sale','Sell / hold planner')] %}
+    <a href="{{ url_for('main.property_detail', pid=p.id, tab=key) }}" class="{{ 'on' if tab == key }}">{{ label }}</a>
+  {% endfor %}
+</div>
+
+{% if tab == 'overview' %}
+<div class="kpis">
+  <div class="kpi"><div class="l">Total invested</div><div class="v">{{ m.cost_basis|money }}</div><div class="h">Purchase {{ m.purchase_total|money }} + improvements {{ m.capex|money }}</div></div>
+  <div class="kpi"><div class="l">{{ 'Sold for' if m.sold else 'Current value' }}</div><div class="v">{{ m.value|money }}</div><div class="h">{{ m.value_source }}</div></div>
+  <div class="kpi"><div class="l">Equity</div><div class="v">{{ m.equity|money }}</div><div class="h">{% if m.loan_balance %}Loan left {{ m.loan_balance|money }}{% else %}No loan{% endif %}</div></div>
+  <div class="kpi"><div class="l">Rent / month</div><div class="v">{{ m.rent_monthly|money if m.rent_monthly else '—' }}</div><div class="h">{% if m.extra.rent_basis == 'expected' %}expected (no lease yet){% else %}Occupancy 12 m {{ m.occupancy_12m|pct(0) }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">Gross / net yield</div><div class="v">{{ m.gross_yield|pct }} <span class="note">/ {{ m.net_yield|pct }}</span></div><div class="h">On total invested · cap rate {{ m.cap_rate|pct }}</div></div>
+  <div class="kpi"><div class="l">Cash-on-cash</div><div class="v">{{ m.cash_on_cash|pct }}</div><div class="h">{% if m.payback_years %}Payback ≈ {{ m.payback_years|round(1) }} yrs{% else %}After debt service{% endif %}</div></div>
+  <div class="kpi"><div class="l">Cash flow to date</div><div class="v {{ 'pos' if m.cash_flow_total >= 0 else 'neg' }}">{{ m.cash_flow_total|money }}</div><div class="h">Rent − costs − tax − loan payments</div></div>
+  <div class="kpi"><div class="l">{{ 'Realised profit' if m.sold else 'Total return' }}</div><div class="v {{ 'pos' if m.total_return >= 0 else 'neg' }}">{{ m.total_return|money }}</div><div class="h">ROI {{ m.roi|pct }} · IRR {{ m.irr|pct }}/yr</div></div>
+</div>
+
+<div class="grid g2">
+  <div class="card">
+    <h2>By year</h2>
+    <div class="scroll"><table>
+      <tr><th>Year</th><th class="n">Income</th><th class="n">Running costs</th><th class="n">NOI</th><th class="n">Renovation</th><th class="n">Loan</th><th class="n">Tax</th><th class="n">Cash flow</th></tr>
+      {% for y in yearly|reverse %}
+      <tr><td>{{ y.year }}</td><td class="n">{{ y.income|money }}</td><td class="n">{{ y.opex|money }}</td><td class="n">{{ y.noi|money }}</td><td class="n">{{ y.capex|money }}</td><td class="n">{{ (y.interest + y.principal)|money }}</td><td class="n">{{ y.tax|money }}</td><td class="n {{ 'pos' if y.cash_flow >= 0 else 'neg' }}">{{ y.cash_flow|money }}</td></tr>
+      {% endfor %}
+    </table></div>
+  </div>
+  <div class="card">
+    <h2>Where the money went</h2>
+    {% if cat_totals %}<div class="chart"><canvas id="cats"></canvas></div>{% else %}<p class="note">No expenses yet.</p>{% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Monthly cash flow</h2>
+  <div class="chart"><canvas id="monthly"></canvas></div>
+</div>
+
+<div class="grid g2">
+  <div class="card">
+    <h2>Market check</h2>
+    {% set mk = market %}
+    {% if not mk.has_data %}
+      <p class="note">No market data yet. Open <a href="{{ url_for('main.market_view') }}">Market data</a> → Refresh, and import VZD transactions for comparables.</p>
+    {% endif %}
+    <table>
+      {% if mk.hpi_change is defined %}<tr><td>House price index since purchase</td><td class="n {{ 'pos' if mk.hpi_change >= 0 else 'neg' }}">{{ mk.hpi_change|pct }}</td><td class="note">{{ mk.hpi_from }} → {{ mk.hpi_to }}, CSP</td></tr>{% endif %}
+      {% if mk.median_m2 is defined %}
+        <tr><td>Comparable deals, median €/m²</td><td class="n">{{ mk.median_m2|money }}</td><td class="note">{{ mk.comps_n }} VZD deals, ±30% size, 24 m · range {{ mk.p25|money }}–{{ mk.p75|money }}</td></tr>
+        {% if mk.bought_m2 %}<tr><td>You bought at</td><td class="n">{{ mk.bought_m2|money }}/m²</td><td></td></tr>{% endif %}
+        <tr><td>Comparable-based value</td><td class="n">{{ mk.comps_value|money }}</td>
+          <td><form method="post" action="{{ url_for('main.valuation_add', pid=p.id) }}" class="inline"><input type="hidden" name="value" value="{{ mk.comps_value|round(0) }}"><input type="hidden" name="source" value="VZD comparables"><button class="ghost">Use as valuation</button></form></td></tr>
+      {% endif %}
+      <tr><td>Typical gross yield, {{ mk.bench_city }}</td><td class="n">{{ mk.bench_yield|pct }}</td><td class="note">{{ mk.bench_src }} · yours {{ m.gross_yield|pct }}</td></tr>
+      {% if mk.euribor6 is defined %}<tr><td>6M Euribor</td><td class="n">{{ mk.euribor6|round(2) }}%</td><td class="note">{{ mk.euribor_period }}, ECB{% if p.loan_amount %} · your rate {{ p.loan_rate }}%{% endif %}</td></tr>{% endif %}
+    </table>
+    {% if mk.comps %}
+      <details style="margin-top:10px"><summary>Show recent comparable deals</summary>
+        <table>{% for c in mk.comps %}<tr><td>{{ c.deal_date }}</td><td>{{ c.address or c.territory or '' }}</td><td class="n">{{ c.area_m2|num(1) }} m²</td><td class="n">{{ c.price|money }}</td><td class="n">{{ c.price_m2|money }}/m²</td></tr>{% endfor %}</table>
+      </details>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h2>Valuations</h2>
+    <form method="post" action="{{ url_for('main.valuation_add', pid=p.id) }}" class="inline">
+      <label>Date<input type="date" name="date" value="{{ today }}"></label>
+      <label>Value, €<input name="value" inputmode="decimal" required style="width:120px"></label>
+      <label>Source<select name="source"><option>manual</option><option>bank appraisal</option><option>agent estimate</option><option>listing comparison</option></select></label>
+      <button>Add</button>
+    </form>
+    <table style="margin-top:10px">{% for v in b.valuations %}
+      <tr><td>{{ v.date }}</td><td>{{ v.source }}</td><td class="n">{{ v.value|money }}</td>
+        <td class="n"><form method="post" action="{{ url_for('main.valuation_delete', vid=v.id) }}"><button class="link">×</button></form></td></tr>
+    {% else %}<tr><td class="note">No valuations yet — the index estimate is used.</td></tr>{% endfor %}</table>
+  </div>
+</div>
+
+{% if p.notes %}<div class="card"><h2>Notes</h2><div style="white-space:pre-wrap">{{ p.notes }}</div></div>{% endif %}
+
+<script>
+{% set ms = monthly[-36:] %}
+pmBar("monthly", {{ ms|map(attribute='month')|list|tojson }}, [
+  {label: "Income", data: {{ ms|map(attribute='income')|list|tojson }}, color: "#1a8a5a"},
+  {label: "Running costs", data: {{ ms|map(attribute='opex')|list|tojson }}.map(v => -v), color: "#c8412f"},
+  {label: "Renovation", data: {{ ms|map(attribute='capex')|list|tojson }}.map(v => -v), color: "#b7791f"},
+  {label: "Loan", data: {{ ms|map(attribute='interest')|list|tojson }}.map((v, i) => -(v + {{ ms|map(attribute='principal')|list|tojson }}[i])), color: "#7a4fd6"},
+  {label: "Net cash flow", type: "line", data: {{ ms|map(attribute='cash_flow')|list|tojson }}, color: "#2f6fde"},
+], {stacked: true});
+{% if cat_totals %}pmDoughnut("cats", {{ cat_totals.keys()|list|tojson }}, {{ cat_totals.values()|list|tojson }});{% endif %}
+</script>
+
+{% elif tab == 'money' %}
+<div class="card">
+  <form method="get" class="inline">
+    <input type="hidden" name="tab" value="money">
+    <label>Category<select name="category"><option value="">All</option>{% for c, g in CATEGORIES %}<option {{ 'selected' if filter_cat == c }}>{{ c }}</option>{% endfor %}</select></label>
+    <label>Year<select name="year"><option value="">All</option>{% for y in years %}<option {{ 'selected' if filter_year == y }}>{{ y }}</option>{% endfor %}</select></label>
+    <button class="ghost">Filter</button>
+    <span style="flex:1"></span>
+    <a class="btn" href="{{ url_for('main.transaction_form', pid=p.id) }}">+ Add</a>
+  </form>
+</div>
+<div class="card scroll">
+  <table>
+    <tr><th>Date</th><th>Category</th><th>Description</th><th>Vendor</th><th class="n">Amount</th><th></th></tr>
+    {% set ns = namespace(inc=0, exp=0) %}
+    {% for t in txs %}
+      {% if t.kind == 'income' %}{% set ns.inc = ns.inc + t.amount %}{% else %}{% set ns.exp = ns.exp + t.amount %}{% endif %}
+      <tr><td>{{ t.date }}</td><td>{{ t.category }} <span class="badge">{{ group_of(t.category, t.kind) }}</span></td><td>{{ t.description or '' }}</td><td>{{ t.vendor or '' }}</td>
+        <td class="n {{ 'pos' if t.kind == 'income' else '' }}">{{ (t.amount if t.kind == 'income' else -t.amount)|money(2) }}</td>
+        <td class="n"><a href="{{ url_for('main.transaction_form', tid=t.id) }}">edit</a></td></tr>
+    {% else %}<tr><td colspan="6" class="empty">No entries yet.</td></tr>{% endfor %}
+    {% if txs %}<tr class="total"><td colspan="4">Income {{ ns.inc|money }} · Expenses {{ ns.exp|money }}</td><td class="n">{{ (ns.inc - ns.exp)|money }}</td><td></td></tr>{% endif %}
+  </table>
+</div>
+<p class="note">Groups: <b>capex</b> = renovation/improvements (adds to cost basis, reduces capital-gains tax) · <b>opex</b> = running costs · <b>tax</b> = income tax paid on rent. Loan payments are calculated from the mortgage fields.</p>
+
+{% elif tab == 'tenants' %}
+<div class="grid g2">
+  <div class="card">
+    <h2>Leases</h2>
+    {% for l in b.leases %}
+      {% set active = (not l.end_date or l.end_date >= today|string) and l.start_date <= today|string %}
+      <div style="border-bottom:1px solid var(--line);padding:8px 0">
+        <b><a href="{{ url_for('main.tenant_detail', tid=l.tenant_id) }}">{{ l.tenant_name }}</a></b>
+        {% if active %}<span class="badge rented">active</span>{% endif %}
+        <div class="note">{{ l.start_date }} → {{ l.end_date or 'open-ended' }} · {{ l.rent|money }}/month · deposit {{ l.deposit|money }} · due day {{ l.payment_day }}{% if l.phone %} · {{ l.phone }}{% endif %}</div>
+        <div class="inline" style="margin-top:4px">
+          <a href="{{ url_for('main.transaction_form', pid=p.id, category='Rent', amount=l.rent, lease_id=l.id, description='Rent ' ~ today.strftime('%Y-%m')) }}">Record rent</a>
+          <details><summary>edit</summary>
+            <form method="post" action="{{ url_for('main.lease_save', lid=l.id) }}" class="stack" style="margin-top:8px">
+              <input type="hidden" name="tenant_id" value="{{ l.tenant_id }}">
+              <div class="row">
+                <label>Start<input type="date" name="start_date" value="{{ l.start_date }}" required></label>
+                <label>End<input type="date" name="end_date" value="{{ l.end_date or '' }}"></label>
+                <label>Rent / month<input name="rent" value="{{ l.rent }}"></label>
+                <label>Deposit<input name="deposit" value="{{ l.deposit }}"></label>
+                <label>Payment day<input name="payment_day" value="{{ l.payment_day }}"></label>
+              </div>
+              <label>Notes<input name="notes" value="{{ l.notes or '' }}"></label>
+              <button>Save</button>
+            </form>
+            <form method="post" action="{{ url_for('main.lease_delete', lid=l.id) }}" onsubmit="return confirm('Delete lease?')"><button class="link">Delete lease</button></form>
+          </details>
+        </div>
+      </div>
+    {% else %}<p class="note">No leases yet.</p>{% endfor %}
+  </div>
+  <div class="card">
+    <h2>New lease</h2>
+    <form method="post" action="{{ url_for('main.lease_save', pid=p.id) }}" class="stack">
+      <label>Tenant<select name="tenant_id" onchange="document.getElementById('nt').style.display = this.value === 'new' ? '' : 'none'">
+        <option value="new">+ New tenant</option>{% for t in tenants %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></label>
+      <div id="nt" class="row">
+        <label>Name<input name="new_tenant_name"></label>
+        <label>Phone<input name="new_tenant_phone"></label>
+        <label>Email<input name="new_tenant_email" type="email"></label>
+      </div>
+      <div class="row">
+        <label>Start<input type="date" name="start_date" required value="{{ today }}"></label>
+        <label>End <span class="note">(blank = open-ended)</span><input type="date" name="end_date"></label>
+        <label>Rent / month, €<input name="rent" inputmode="decimal" required></label>
+        <label>Deposit, €<input name="deposit" inputmode="decimal"></label>
+        <label>Payment day<input name="payment_day" value="1" inputmode="numeric"></label>
+      </div>
+      <label>Notes<input name="notes" placeholder="Registered in Land Book? Declared residence? Utilities included?"></label>
+      <button>Create lease</button>
+    </form>
+  </div>
+</div>
+<div class="card">
+  <h2>Unpaid rent</h2>
+  {% if roll %}
+    <table><tr><th>Month</th><th class="n">Expected</th><th class="n">Received</th><th class="n">Due</th><th></th></tr>
+    {% for r in roll|reverse %}<tr><td>{{ r.month }}</td><td class="n">{{ r.expected|money }}</td><td class="n">{{ r.received|money }}</td><td class="n neg">{{ r.due|money }}</td>
+      <td class="n"><a href="{{ url_for('main.transaction_form', pid=p.id, category='Rent', amount=r.due, lease_id=r.lease_id, date=r.month ~ '-01', description='Rent ' ~ r.month) }}">record payment</a></td></tr>{% endfor %}
+    </table>
+  {% else %}<p class="note">All rent received. Rent is matched by month of the payment date and the lease it's linked to.</p>{% endif %}
+</div>
+<p class="note">Tip (LV): if no one has declared residence in the apartment on 1 January, Rīga charges 1.5% property tax (NĪN) instead of 0.2–0.6%. Registering the lease in the Land Book speeds up eviction if ever needed.</p>
+
+{% elif tab == 'documents' %}
+<div class="card">
+  <h2>Upload</h2>
+  <form method="post" action="{{ url_for('main.documents') }}" enctype="multipart/form-data" class="inline">
+    <input type="hidden" name="property_id" value="{{ p.id }}"><input type="hidden" name="back" value="{{ request.full_path }}">
+    <label>File<input type="file" name="file" required></label>
+    <label>Title<input name="title"></label>
+    <label>Category<select name="category">{% for c in doc_categories %}<option>{{ c }}</option>{% endfor %}</select></label>
+    <label>Expires<input type="date" name="expires_on"></label>
+    <button>Upload</button>
+  </form>
+</div>
+{% include "_doc_table.html" %}
+
+{% elif tab == 'sale' %}
+<div class="card verdict {{ rec.verdict }}">
+  <h2>{{ {'consider_selling': 'Consider selling', 'hold': 'Recommendation: hold'}.get(rec.verdict, 'Not enough data') }}</h2>
+  <p>{{ rec.text }}</p>
+  {% for n in rec.notes %}<p class="note">⚠ {{ n }}</p>{% endfor %}
+  {% if rec.best %}<p class="note">Best projected equity IRR: <b>{{ rec.best.irr|pct }}</b> if sold around {{ rec.best.date.year }} (year {{ rec.best.year }}).</p>{% endif %}
+</div>
+<div class="card">
+  <form method="get" class="inline">
+    <input type="hidden" name="tab" value="sale">
+    <label>Price growth, %/yr<input name="g" value="{{ (rate*100)|round(1) }}" style="width:90px"></label>
+    <button class="ghost">Recalculate</button>
+    <span class="note">Default: {{ rate_why }}. Rent +{{ s.rent_growth }}%/yr, costs +{{ s.expense_growth }}%/yr, vacancy {{ s.vacancy_pct }}%, selling costs {{ s.selling_cost_pct }}%, CGT {{ s.cgt_rate }}%, hurdle {{ s.hurdle_rate }}% — change in <a href="{{ url_for('main.settings_view') }}">Settings</a>.</span>
+  </form>
+</div>
+<div class="card"><h2>Profit if sold in…</h2><div class="chart"><canvas id="sale"></canvas></div></div>
+<div class="card scroll">
+  <table>
+    <tr><th>Sell in</th><th class="n">Price</th><th class="n">Selling costs</th><th class="n">Capital-gains tax</th><th class="n">Loan payoff</th><th class="n">Net proceeds</th><th class="n">Cash flow (cum.)</th><th class="n">Total profit</th><th class="n">IRR / yr</th><th class="n">Next year's ROE</th></tr>
+    {% for r in rows %}
+    <tr class="{{ 'hl' if rec.window and r.year == rec.window.year - 1 }}">
+      <td>{{ 'Now' if r.year == 0 else r.date.year }} <span class="note">({{ r.years_held|round(1) }} y held)</span></td>
+      <td class="n">{{ r.value|money }}</td><td class="n">{{ r.selling_costs|money }}</td><td class="n">{{ r.cgt|money }}</td>
+      <td class="n">{{ r.loan_balance|money }}</td><td class="n">{{ r.net_proceeds|money }}</td><td class="n">{{ r.cum_cash_flow|money }}</td>
+      <td class="n {{ 'pos' if r.total_profit >= 0 else 'neg' }}"><b>{{ r.total_profit|money }}</b></td>
+      <td class="n">{{ r.irr|pct }}</td>
+      <td class="n {{ 'neg' if loop.index < rows|length and rows[loop.index].marginal is not none and rows[loop.index].marginal < rec.hurdle }}">{{ rows[loop.index].marginal|pct if loop.index < rows|length else '' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+<p class="note"><b>How to read this:</b> "Total profit" = everything you've got back (rent cash flow + net sale proceeds) minus the cash you put in. "Next year's ROE" is what holding one more year earns on the equity you could otherwise take out (net proceeds) — when it falls below your hurdle rate, your money would likely work harder elsewhere. Projections assume steady growth; treat them as scenarios, not forecasts.</p>
+<script>
+pmBar("sale", {{ rows|map(attribute='label')|list|tojson }}, [
+  {label: "Total profit", data: {{ rows|map(attribute='total_profit')|list|tojson }}, color: "#1a8a5a"},
+  {label: "Net sale proceeds", type: "line", data: {{ rows|map(attribute='net_proceeds')|list|tojson }}, color: "#2f6fde"},
+]);
+</script>
+{% endif %}
+{% endblock %}

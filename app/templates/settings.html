@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head"><div><h1>Settings</h1><div class="sub">Assumptions used in returns, projections and sell/hold advice. Defaults follow Latvian rules.</div></div></div>
+<form method="post" class="stack card" style="max-width:760px">
+  <h2>Taxes</h2>
+  <div class="row">
+    <label>Rental income tax, % of gross<input name="rental_tax_rate" value="{{ s.rental_tax_rate }}"><span class="note">10% for a private landlord registered with VID</span></label>
+    <label>Capital-gains tax, %<input name="cgt_rate" value="{{ s.cgt_rate }}"><span class="note">25.5% from 2025</span></label>
+    <label>Selling costs, % of price<input name="selling_cost_pct" value="{{ s.selling_cost_pct }}"><span class="note">agent ≈ 2–5% + notary</span></label>
+  </div>
+  <h2>Projections</h2>
+  <div class="row">
+    <label>Price growth, %/yr<input name="default_appreciation" value="{{ s.default_appreciation }}" placeholder="auto from CSP index"><span class="note">Blank = 5-year trend of the house price index</span></label>
+    <label>Rent growth, %/yr<input name="rent_growth" value="{{ s.rent_growth }}"></label>
+    <label>Cost growth, %/yr<input name="expense_growth" value="{{ s.expense_growth }}"></label>
+    <label>Vacancy, % of rent<input name="vacancy_pct" value="{{ s.vacancy_pct }}"></label>
+    <label>Hurdle rate, %/yr<input name="hurdle_rate" value="{{ s.hurdle_rate }}"><span class="note">What your equity could earn elsewhere (deposit, ETF, paying down debt)</span></label>
+  </div>
+  <button>Save</button>
+</form>
+<div class="card" style="max-width:760px">
+  <h2>Data &amp; backup</h2>
+  <p class="note">Everything lives in <code>data/property.db</code> (SQLite) and <code>data/uploads/</code>. Back up the <code>data</code> folder. Set <code>PM_PASSWORD</code> to require a login when running on a server.</p>
+  <a class="btn ghost" href="{{ url_for('main.transactions_csv') }}">Export entries (CSV)</a>
+</div>
+{% endblock %}

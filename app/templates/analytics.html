@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head">
+  <div><h1>Analytics</h1><div class="sub">Income, costs and cash flow by {{ period }}.</div></div>
+  <a class="btn ghost" href="{{ url_for('main.transactions_csv') }}">Export all entries (CSV)</a>
+</div>
+<div class="card">
+  <form method="get" class="inline">
+    <label>Property<select name="property"><option value="">All properties</option>{% for b in bundles %}<option value="{{ b.p.id }}" {{ 'selected' if pid == b.p.id }}>{{ b.p.name }}</option>{% endfor %}</select></label>
+    <label>Group by<select name="period"><option value="month" {{ 'selected' if period == 'month' }}>Month</option><option value="year" {{ 'selected' if period == 'year' }}>Year</option></select></label>
+    {% if period == 'month' %}<label><input type="checkbox" name="all" value="1" {{ 'checked' if request.args.get('all') }}> full history</label>{% endif %}
+    <button class="ghost">Show</button>
+  </form>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="l">Invested</div><div class="v">{{ totals.cost_basis|money }}</div></div>
+  <div class="kpi"><div class="l">Value</div><div class="v">{{ totals.value|money }}</div></div>
+  <div class="kpi"><div class="l">Income to date</div><div class="v">{{ totals.income_total|money }}</div></div>
+  <div class="kpi"><div class="l">Running costs to date</div><div class="v">{{ totals.opex_total|money }}</div></div>
+  <div class="kpi"><div class="l">Gross / net yield</div><div class="v">{{ totals.gross_yield|pct }} <span class="note">/ {{ totals.net_yield|pct }}</span></div></div>
+  <div class="kpi"><div class="l">ROI on own cash</div><div class="v">{{ totals.roi|pct }}</div></div>
+</div>
+
+<div class="card"><h2>Cash flow</h2><div class="chart"><canvas id="c1"></canvas></div></div>
+
+<div class="grid g2">
+  <div class="card"><h2>Cumulative cash position</h2><div class="chart"><canvas id="c2"></canvas></div><p class="note">Running total of all money in and out (incl. renovation and loan payments, excl. purchase). Shows when the investment starts paying itself back.</p></div>
+  <div class="card"><h2>Expenses by category</h2>{% if cats %}<div class="chart"><canvas id="c3"></canvas></div>{% else %}<p class="note">No expenses in this period.</p>{% endif %}</div>
+</div>
+
+<div class="card scroll">
+  <table>
+    <tr><th>{{ period|capitalize }}</th><th class="n">Income</th><th class="n">Running costs</th><th class="n">NOI</th><th class="n">Renovation</th><th class="n">Interest</th><th class="n">Principal</th><th class="n">Tax paid</th>{% if period == 'year' %}<th class="n">Rent tax est.</th>{% endif %}<th class="n">Cash flow</th></tr>
+    {% set ns = namespace(i=0, o=0, n=0, c=0, it=0, pr=0, tx=0, cf=0) %}
+    {% for r in table|reverse %}
+      {% set ns.i = ns.i + r.income %}{% set ns.o = ns.o + r.opex %}{% set ns.n = ns.n + r.noi %}{% set ns.c = ns.c + r.capex %}{% set ns.it = ns.it + r.interest %}{% set ns.pr = ns.pr + r.principal %}{% set ns.tx = ns.tx + r.tax %}{% set ns.cf = ns.cf + r.cash_flow %}
+      <tr><td>{{ r.label }}</td><td class="n">{{ r.income|money }}</td><td class="n">{{ r.opex|money }}</td><td class="n">{{ r.noi|money }}</td><td class="n">{{ r.capex|money }}</td><td class="n">{{ r.interest|money }}</td><td class="n">{{ r.principal|money }}</td><td class="n">{{ r.tax|money }}</td>
+        {% if period == 'year' %}<td class="n" title="10% of gross income — check against what you paid to VID">{{ (r.income * 0.10)|money }}</td>{% endif %}
+        <td class="n {{ 'pos' if r.cash_flow >= 0 else 'neg' }}">{{ r.cash_flow|money }}</td></tr>
+    {% endfor %}
+    <tr class="total"><td>Total</td><td class="n">{{ ns.i|money }}</td><td class="n">{{ ns.o|money }}</td><td class="n">{{ ns.n|money }}</td><td class="n">{{ ns.c|money }}</td><td class="n">{{ ns.it|money }}</td><td class="n">{{ ns.pr|money }}</td><td class="n">{{ ns.tx|money }}</td>{% if period == 'year' %}<td class="n">{{ (ns.i * 0.10)|money }}</td>{% endif %}<td class="n">{{ ns.cf|money }}</td></tr>
+  </table>
+</div>
+
+<script>
+const L = {{ table|map(attribute='label')|list|tojson }};
+pmBar("c1", L, [
+  {label: "Income", data: {{ table|map(attribute='income')|list|tojson }}, color: "#1a8a5a"},
+  {label: "Running costs", data: {{ table|map(attribute='opex')|list|tojson }}.map(v => -v), color: "#c8412f"},
+  {label: "Renovation", data: {{ table|map(attribute='capex')|list|tojson }}.map(v => -v), color: "#b7791f"},
+  {label: "Loan", data: {{ table|map(attribute='interest')|list|tojson }}.map((v, i) => -(v + {{ table|map(attribute='principal')|list|tojson }}[i])), color: "#7a4fd6"},
+  {label: "Net cash flow", type: "line", data: {{ table|map(attribute='cash_flow')|list|tojson }}, color: "#2f6fde"},
+], {stacked: true});
+let acc = 0;
+pmLine("c2", L, [{label: "Cumulative", data: {{ table|map(attribute='cash_flow')|list|tojson }}.map(v => (acc += v)), color: "#2f6fde"}]);
+{% if cats %}pmDoughnut("c3", {{ cats.keys()|list|tojson }}, {{ cats.values()|list|tojson }});{% endif %}
+</script>
+{% endblock %}

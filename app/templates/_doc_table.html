@@ -1,0 +1,17 @@
+<div class="card scroll">
+  <table>
+    <tr><th>Title</th><th>Category</th>{% if show_owner %}<th>Property / tenant</th>{% endif %}<th>Expires</th><th>Uploaded</th><th></th></tr>
+    {% for d in docs %}
+      <tr>
+        <td><a href="{{ url_for('main.document_file', did=d.id) }}" target="_blank">{{ d.title }}</a><br><span class="note">{{ d.original_name }}</span></td>
+        <td>{{ d.category }}</td>
+        {% if show_owner %}<td>{{ d.pname or '' }}{% if d.tname %} · {{ d.tname }}{% endif %}</td>{% endif %}
+        <td class="{{ 'neg' if d.expires_on and d.expires_on < today|string }}">{{ d.expires_on or '' }}</td>
+        <td class="note">{{ d.uploaded_at[:10] }}</td>
+        <td class="n"><a href="{{ url_for('main.document_file', did=d.id, download=1) }}">download</a>
+          <form method="post" action="{{ url_for('main.document_delete', did=d.id) }}" style="display:inline" onsubmit="return confirm('Delete document?')">
+            <input type="hidden" name="back" value="{{ request.full_path }}"><button class="link">delete</button></form></td>
+      </tr>
+    {% else %}<tr><td colspan="6" class="empty">No documents yet.</td></tr>{% endfor %}
+  </table>
+</div>

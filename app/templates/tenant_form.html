@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="head"><h1>{{ 'Edit tenant' if t else 'New tenant' }}</h1></div>
+<form method="post" class="stack card" style="max-width:640px">
+  <div class="row">
+    <label>Name *<input name="name" required value="{{ t.name if t else '' }}"></label>
+    <label>Phone<input name="phone" value="{{ t.phone or '' if t else '' }}"></label>
+    <label>Email<input name="email" type="email" value="{{ t.email or '' if t else '' }}"></label>
+  </div>
+  <label>Notes<textarea name="notes">{{ t.notes or '' if t else '' }}</textarea></label>
+  <button>Save</button>
+</form>
+{% if t %}
+<form method="post" action="{{ url_for('main.tenant_delete', tid=t.id) }}" onsubmit="return confirm('Delete tenant and their leases?')"><button class="link">Delete tenant</button></form>
+{% endif %}
+{% endblock %}

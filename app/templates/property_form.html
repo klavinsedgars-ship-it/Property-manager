@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+{% set v = p or {} %}
+<div class="head"><h1>{{ 'Edit ' ~ p.name if p else 'New property' }}</h1></div>
+<form method="post" class="stack">
+  <div class="card">
+    <h2>Basics</h2>
+    <div class="row">
+      <label>Name *<input name="name" required value="{{ v.name or '' }}" placeholder="e.g. Brīvības 120-15"></label>
+      <label>Address<input name="address" value="{{ v.address or '' }}"></label>
+      <label>City<input name="city" value="{{ v.city or 'Rīga' }}" list="cities"></label>
+      <label>District / neighbourhood<input name="district" value="{{ v.district or '' }}" placeholder="Purvciems, Centrs…"></label>
+    </div>
+    <datalist id="cities"><option>Rīga<option>Jūrmala<option>Liepāja<option>Daugavpils<option>Jelgava<option>Ventspils<option>Valmiera<option>Ogre<option>Mārupe<option>Ķekava</datalist>
+    <div class="row">
+      <label>Type<select name="kind">{% for k in kinds %}<option {{ 'selected' if v.kind == k }}>{{ k }}</option>{% endfor %}</select></label>
+      <label>Building series<select name="building_series">{% for s in series %}<option value="{{ s }}" {{ 'selected' if v.building_series == s }}>{{ s or '—' }}</option>{% endfor %}</select></label>
+      <label>Area, m²<input name="area_m2" inputmode="decimal" value="{{ v.area_m2 or '' }}"></label>
+      <label>Rooms<input name="rooms" inputmode="numeric" value="{{ v.rooms or '' }}"></label>
+      <label>Floor<input name="floor" value="{{ v.floor or '' }}" placeholder="3/5"></label>
+      <label>Cadastre no.<input name="cadastre_no" value="{{ v.cadastre_no or '' }}"></label>
+      <label>Expected rent, €/month<input name="expected_rent" inputmode="decimal" value="{{ v.expected_rent or '' }}"><span class="note">Used for projections until a lease exists</span></label>
+      <label>Status<select name="status">{% for s in statuses %}<option value="{{ s }}" {{ 'selected' if v.status == s }}>{{ s|replace('_',' ') }}</option>{% endfor %}</select></label>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Purchase</h2>
+    <div class="row">
+      <label>Purchase date<input type="date" name="purchase_date" value="{{ v.purchase_date or '' }}"></label>
+      <label>Purchase price, €<input name="purchase_price" inputmode="decimal" value="{{ v.purchase_price or '' }}"></label>
+      <label>Purchase costs, €<input name="purchase_costs" inputmode="decimal" value="{{ v.purchase_costs or '' }}" id="pc">
+        <span class="note">Land-book duty (1.5%), notary, agent, valuation. <a href="#" onclick="let p=parseFloat(document.querySelector('[name=purchase_price]').value)||0;document.getElementById('pc').value=Math.round(Math.min(p*0.015,50000)+250);return false">Estimate</a></span></label>
+    </div>
+    <label><input type="checkbox" name="declared_residence" {{ 'checked' if v.declared_residence }}> I have (or will have) my declared residence here ≥ 12 months — needed for the capital-gains tax exemption after 60 months</label>
+    <p class="note">Renovation and furnishing costs are added later as expenses — they increase your cost basis automatically.</p>
+  </div>
+  <div class="card">
+    <h2>Mortgage <span class="note">(optional)</span></h2>
+    <div class="row">
+      <label>Loan amount, €<input name="loan_amount" inputmode="decimal" value="{{ v.loan_amount or '' }}"></label>
+      <label>Interest rate, % (Euribor + margin)<input name="loan_rate" inputmode="decimal" value="{{ v.loan_rate or '' }}"></label>
+      <label>Term, months<input name="loan_term_months" inputmode="numeric" value="{{ v.loan_term_months or '' }}" placeholder="360"></label>
+      <label>Loan start<input type="date" name="loan_start" value="{{ v.loan_start or '' }}"></label>
+    </div>
+    <p class="note">Monthly payments, interest and the remaining balance are calculated from these (annuity) — no need to enter loan payments as expenses.</p>
+  </div>
+  <div class="card">
+    <h2>Sale <span class="note">(fill in when sold)</span></h2>
+    <div class="row">
+      <label>Sale date<input type="date" name="sale_date" value="{{ v.sale_date or '' }}"></label>
+      <label>Sale price, €<input name="sale_price" inputmode="decimal" value="{{ v.sale_price or '' }}"></label>
+      <label>Selling costs, €<input name="sale_costs" inputmode="decimal" value="{{ v.sale_costs or '' }}"></label>
+    </div>
+  </div>
+  <div class="card"><label>Notes<textarea name="notes">{{ v.notes or '' }}</textarea></label></div>
+  <button>Save</button>
+  <a class="btn ghost" href="{{ url_for('main.property_detail', pid=p.id) if p else url_for('main.properties') }}">Cancel</a>
+</form>
+{% if p %}
+<form method="post" action="{{ url_for('main.property_delete', pid=p.id) }}" onsubmit="return confirm('Delete this property with all its transactions, leases and documents?')" style="margin-top:24px">
+  <button class="link">Delete property</button>
+</form>
+{% endif %}
+{% endblock %}
