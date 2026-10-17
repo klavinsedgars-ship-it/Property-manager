@@ -1,44 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Sold properties · Property Manager{% endblock %}
 {% block content %}
-<div class="head">
-  <div><h1>Sold properties</h1><div class="sub">Every sale registered in the Land Book — State Land Service (VZD) open data from data.gov.lv.</div></div>
-  <div class="inline">
-    <a class="btn ghost" href="{{ url_for('main.stats') }}">Official average prices</a>
-    <a class="btn ghost" href="{{ url_for('main.sales_csv', **request.args) }}">Export CSV</a>
-  </div>
-</div>
+{% include "_sales_head.html" %}
 
 {% if not coverage %}
 <div class="card empty">
   <p>No sales imported yet. Go to <a href="{{ url_for('main.market_view') }}">Market data</a>, press <b>Find datasets</b>, then import the years you need.</p>
 </div>
 {% else %}
-<form method="get" class="card stack">
-  <div class="row">
-    <label>Type<select name="kind"><option value="">All</option>{% for k, label in kinds.items() %}<option value="{{ k }}" {{ 'selected' if f.kind == k }}>{{ label }}</option>{% endfor %}</select></label>
-    <label>City / municipality<select name="territory"><option value="">All of Latvia</option>{% for t in territories %}<option {{ 'selected' if f.territory == t.territory }} value="{{ t.territory }}">{{ t.territory }} ({{ t.n }})</option>{% endfor %}</select></label>
-    <label>Street / address / cadastre<input name="q" value="{{ f.q }}" placeholder="e.g. Brīvības, Dzelzavas 10"></label>
-    <label>Rooms<select name="rooms"><option value="">Any</option>{% for r in ['1','2','3','4','5+'] %}<option {{ 'selected' if f.rooms == r }}>{{ r }}</option>{% endfor %}</select></label>
-  </div>
-  <div class="row">
-    <label>Area from, m²<input name="area_min" value="{{ f.area_min }}" inputmode="decimal"></label>
-    <label>Area to, m²<input name="area_max" value="{{ f.area_max }}" inputmode="decimal"></label>
-    <label>Price from, €<input name="price_min" value="{{ f.price_min }}" inputmode="decimal"></label>
-    <label>Price to, €<input name="price_max" value="{{ f.price_max }}" inputmode="decimal"></label>
-    <label>Built from (year)<input name="year_min" value="{{ f.year_min }}" inputmode="numeric"></label>
-    <label>Built to (year)<input name="year_max" value="{{ f.year_max }}" inputmode="numeric"></label>
-    <label>Sold from<input type="date" name="since" value="{{ f.since }}"></label>
-    <label>Sold to<input type="date" name="until" value="{{ f.until }}"></label>
-  </div>
-  <div class="inline">
-    <button>Show</button>
-    {% for label, months in [('6 m', 6), ('1 y', 12), ('2 y', 24), ('5 y', 60), ('All', 0)] %}
-      <button type="button" class="ghost" onclick="pmSince(this, {{ months }})">{{ label }}</button>
-    {% endfor %}
-    <a class="btn ghost" href="{{ url_for('main.sales') }}">Reset</a>
-  </div>
-</form>
+{% include "_sales_filters.html" %}
 
 {% if not s %}
   <div class="card empty">No sales match these filters.</div>
@@ -98,12 +68,6 @@
 <p class="note">Registered price can differ from the real market price (deals between relatives, shares, bundled furniture). Deals covering several properties for one total price are excluded.</p>
 
 <script>
-function pmSince(btn, months) {
-  const f = btn.closest("form");
-  f.since.value = months ? new Date(new Date().setMonth(new Date().getMonth() - months)).toISOString().slice(0, 10) : "";
-  f.until.value = "";
-  f.submit();
-}
 pmBar("trend", {{ s.quarters|map(attribute='q')|list|tojson }}, [
   {label: "Median €/m²", type: "line", data: {{ s.quarters|map(attribute='ppm')|list|tojson }}, color: "#2f6fde"},
   {label: "Sales", data: {{ s.quarters|map(attribute='count')|list|tojson }}, color: "#c9d3e3", axis: "y2"},

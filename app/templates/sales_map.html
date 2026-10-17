@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Sales map · Property Manager{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='leaflet/leaflet.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='leaflet/MarkerCluster.css') }}">
+<script src="{{ url_for('static', filename='leaflet/leaflet.js') }}"></script>
+<script src="{{ url_for('static', filename='leaflet/leaflet.markercluster.js') }}"></script>
+{% endblock %}
+{% block content %}
+{% include "_sales_head.html" %}
+
+{% if not coverage %}
+<div class="card empty"><p>No sales imported yet. Go to <a href="{{ url_for('main.market_view') }}">Market data</a>, press <b>Find datasets</b>, then import the years you need.</p></div>
+{% elif not located %}
+<div class="card empty"><p>Sales are imported, but none has a map location yet. Locations come from the VZD coordinate files inside the yearly archives — re-import the years on <a href="{{ url_for('main.market_view') }}">Market data</a> (existing sales are kept and get their location filled in). The import report shows how many sales were located.</p></div>
+{% else %}
+{% include "_sales_filters.html" %}
+
+<div class="mapwrap">
+  <div id="map"></div>
+  <div class="card mapside">
+    <h2 style="margin-bottom:6px">In this map view</h2>
+    <div class="kpis" style="grid-template-columns:repeat(2,1fr);margin-bottom:10px">
+      <div class="kpi"><div class="l">Sales</div><div class="v" id="v-n">…</div></div>
+      <div class="kpi"><div class="l">Median €/m²</div><div class="v" id="v-ppm">…</div></div>
+      <div class="kpi"><div class="l">Median price</div><div class="v" id="v-price">…</div></div>
+      <div class="kpi"><div class="l">Median area</div><div class="v" id="v-area">…</div></div>
+    </div>
+    <div class="note" id="v-note"></div>
+    <div class="list"><table id="v-list"></table></div>
+  </div>
+</div>
+<p class="note">Each dot is a building; its colour is the median €/m² of the sales there. Groups show the median for all sales inside. Map © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors; sales data © VZD (CC BY 4.0).</p>
+
+<script>
+(function () {
+  const COLORS = ["#1a9850", "#91cf60", "#fee08b", "#fc8d59", "#d73027"];
+  const eur = (v) => "€" + Math.round(v).toLocaleString("en").replace(/,/g, " ");
+  const short = (v) => v >= 1000 ? "€" + (v / 1000).toFixed(v >= 10000 ? 0 : 1) + "k" : "€" + Math.round(v);
+  const median = (a) => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  // item: [date, address, area, rooms, floor, price, ppm, year, cadastre]
+
+  const map = L.map("map", {preferCanvas: true}).setView([56.95, 24.1], 7);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  }).addTo(map);
+
+  let breaks = [];
+  const colorOf = (ppm) => { let i = 0; while (i < breaks.length && ppm > breaks[i]) i++; return COLORS[i]; };
+
+  const clusters = L.markerClusterGroup({
+    maxClusterRadius: 55, showCoverageOnHover: false, chunkedLoading: true,
+    iconCreateFunction(c) {
+      const ppms = c.getAllChildMarkers().flatMap((m) => m.items.map((x) => x[6]));
+      const med = median(ppms), size = Math.min(60, 30 + Math.log10(ppms.length + 1) * 12);
+      return L.divIcon({className: "", iconSize: [size, size],
+        html: `<div class="cl" style="width:${size}px;height:${size}px;background:${colorOf(med)}">${short(med)}<small>${ppms.length}</small></div>`});
+    },
+  });
+  map.addLayer(clusters);
+
+  const markers = [];
+  function popup(m) {
+    const rows = m.items.map((x) => `<tr><td>${esc(x[0])}</td><td>${x[2]} m²${x[3] ? ", " + x[3] + " ist." : ""}${x[4] ? ", " + esc(x[4]) + ". st." : ""}</td><td><b>${eur(x[5])}</b></td><td>${eur(x[6])}/m²</td></tr>`).join("");
+    const it = m.items[0];
+    return `<b>${esc(it[1] || "—")}</b><br><span style="color:#777">${it[7] ? "Built " + it[7] + " · " : ""}${esc(it[8])}</span><table style="margin-top:6px">${rows}</table>`;
+  }
+
+  function legend() {
+    const ctl = L.control({position: "bottomleft"});
+    ctl.onAdd = () => {
+      const d = L.DomUtil.create("div", "legend");
+      const lab = ["< " + eur(breaks[0])].concat(breaks.slice(1).map((b, i) => eur(breaks[i]) + " – " + eur(b)), ["> " + eur(breaks[breaks.length - 1])]);
+      d.innerHTML = "<b>€/m²</b><br>" + COLORS.map((c, i) => `<i style="background:${c}"></i>${lab[i]}`).join("<br>");
+      return d;
+    };
+    ctl.addTo(map);
+  }
+
+  function updatePanel() {
+    const b = map.getBounds();
+    const vis = markers.filter((m) => b.contains(m.getLatLng()));
+    const items = vis.flatMap((m) => m.items.map((x) => [x, m]));
+    document.getElementById("v-n").textContent = items.length.toLocaleString("en").replace(/,/g, " ");
+    document.getElementById("v-ppm").textContent = items.length ? eur(median(items.map((x) => x[0][6]))) : "—";
+    document.getElementById("v-price").textContent = items.length ? eur(median(items.map((x) => x[0][5]))) : "—";
+    document.getElementById("v-area").textContent = items.length ? median(items.map((x) => x[0][2])).toFixed(1) + " m²" : "—";
+    items.sort((a, b) => (a[0][0] < b[0][0] ? 1 : -1));
+    const shown = items.slice(0, 150);
+    document.getElementById("v-list").innerHTML =
+      "<tr><th>Date</th><th>Address</th><th class='n'>m²</th><th class='n'>€/m²</th></tr>" +
+      shown.map(([x], i) => `<tr data-i="${i}"><td>${x[0]}</td><td>${esc(x[1])}<br><span class="note">${x[3] ? x[3] + " rooms · " : ""}${eur(x[5])}</span></td><td class="n">${x[2]}</td><td class="n"><span style="color:${colorOf(x[6])}">●</span> ${eur(x[6])}</td></tr>`).join("");
+    document.getElementById("v-note").textContent = items.length > shown.length ? `Latest ${shown.length} of ${items.length} listed — zoom in to narrow down.` : "";
+    document.querySelectorAll("#v-list tr[data-i]").forEach((tr) => tr.onclick = () => {
+      const m = shown[+tr.dataset.i][1];
+      clusters.zoomToShowLayer(m, () => m.openPopup());
+    });
+  }
+
+  fetch("{{ url_for('main.sales_points') }}" + location.search).then((r) => r.json()).then((data) => {
+    const all = data.points.flatMap((p) => p[2].map((x) => x[6])).sort((a, b) => a - b);
+    breaks = [0.2, 0.4, 0.6, 0.8].map((q) => all[Math.floor(q * (all.length - 1))] || 0).map(Math.round);
+    for (const [lat, lon, items] of data.points) {
+      const med = median(items.map((x) => x[6]));
+      const size = items.length > 1 ? 16 : 12;
+      const m = L.marker([lat, lon], {icon: L.divIcon({className: "", iconSize: [size, size],
+        html: `<div class="dot" style="width:${size}px;height:${size}px;background:${colorOf(med)}"></div>`})});
+      m.items = items;
+      m.bindPopup(() => popup(m), {maxWidth: 420});
+      markers.push(m);
+    }
+    clusters.addLayers(markers);
+    if (markers.length) map.fitBounds(L.featureGroup(markers).getBounds().pad(0.05), {maxZoom: 15});
+    if (all.length) legend();
+    if (data.truncated) document.getElementById("v-note").textContent = "Showing the latest " + data.count + " sales — narrow the filters for more.";
+    updatePanel();
+    map.on("moveend", updatePanel);
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -122,6 +122,8 @@ CREATE TABLE IF NOT EXISTS sales (
     build_year   INTEGER,
     land_area_m2 REAL,
     source       TEXT,
+    lat          REAL,                -- WGS84, from VZD building coordinates
+    lon          REAL,
     UNIQUE (kind, deal_date, cadastre_no, price, area_m2)
 );
 CREATE INDEX IF NOT EXISTS ix_sales_terr ON sales(kind, territory, deal_date);

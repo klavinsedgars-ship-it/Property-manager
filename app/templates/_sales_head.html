@@ -1,0 +1,11 @@
+<div class="head">
+  <div><h1>Sold properties</h1><div class="sub">Every sale registered in the Land Book — State Land Service (VZD) open data from data.gov.lv.</div></div>
+  <div class="inline">
+    <a class="btn ghost" href="{{ url_for('main.stats') }}">Official average prices</a>
+    <a class="btn ghost" href="{{ url_for('main.sales_csv', **request.args) }}">Export CSV</a>
+  </div>
+</div>
+<div class="tabs">
+  <a href="{{ url_for('main.sales', **request.args) }}" class="{{ 'on' if request.endpoint == 'main.sales' }}">Statistics &amp; list</a>
+  <a href="{{ url_for('main.sales_map', **request.args) }}" class="{{ 'on' if request.endpoint == 'main.sales_map' }}">Map</a>
+</div>

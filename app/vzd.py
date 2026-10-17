@@ -26,6 +26,7 @@ from collections import Counter, defaultdict
 from datetime import date, datetime
 
 from . import finance as fin
+from . import geo
 from .db import set_setting
 
 DEALS_PACKAGE = "nekustama-ipasuma-tirgus-datu-bazes-atvertie-dati"
@@ -184,6 +185,11 @@ COMMON = {
     "territory": [r"atvk.*(name|nosaukums)", r"territor.*name", r"novads", r"pilseta", r"municip",
                   r"admin.*(name|nosaukums)"],
     "parts": [r"pregcount", r"telpugrupuskaits", r"objectcount", r"objcount"],
+    # location: decimal degrees (VZD: DdN / DdE) or LKS grid X / Y
+    "lat": [r"^ddn$", r"latitude", r"^lat$", r"platums"],
+    "lon": [r"^dde$", r"longitude", r"^lon$", r"^lng$", r"garums"],
+    "x": [r"^x$", r"^koordx$", r"^xkoord", r"^coordx$", r"lks.*x$"],
+    "y": [r"^y$", r"^koordy$", r"^ykoord", r"^coordy$", r"lks.*y$"],
 }
 BY_KIND = {
     "apartment": {
@@ -258,9 +264,15 @@ def territory_from_address(addr: str | None) -> str | None:
 def import_bytes(db, raw: bytes, name: str, kinds=("apartment", "house", "land")) -> str:
     report = []
     total_added = 0
-    for member, text in csv_members(raw, name):
-        header, rows = read_csv(text)
-        if not header:
+    members = [(m, *read_csv(text)) for m, text in csv_members(raw, name)]
+    # Coordinate files (DeaId / cadastre -> location) are applied to the sales files.
+    coords: dict[str, tuple[float, float]] = {}
+    for member, header, rows in members:
+        if header and _is_coordinate_file(header):
+            n = _read_coordinates(header, rows, coords)
+            report.append(f"{member.rsplit('/', 1)[-1]}: {n} locations")
+    for member, header, rows in members:
+        if not header or _is_coordinate_file(header):
             continue
         kind = kind_from_name(member, header)
         if kind not in kinds:
@@ -270,11 +282,12 @@ def import_bytes(db, raw: bytes, name: str, kinds=("apartment", "house", "land")
         if not {"price", "area"} <= cols.keys():
             report.append(f"{member.rsplit('/', 1)[-1]}: no price/area columns in {header[:20]}")
             continue
-        added, skipped, multi = _import_rows(db, rows, cols, kind, member)
+        added, skipped, multi, located = _import_rows(db, rows, cols, kind, member, coords)
         total_added += added
         mapping = ", ".join(f"{k}←{header[i]}" for k, i in cols.items())
-        report.append(f"{member.rsplit('/', 1)[-1]} ({KINDS[kind]}): +{added} sales, {multi} multi-property "
-                      f"deals and {skipped} incomplete/outlier rows skipped. Columns: {mapping}")
+        report.append(f"{member.rsplit('/', 1)[-1]} ({KINDS[kind]}): {added} sales imported/updated "
+                      f"({located} with map location), {multi} multi-property deals and {skipped} "
+                      f"incomplete/outlier rows skipped. Columns: {mapping}")
     db.commit()
     meta_set(db, "last_import", {"name": name, "at": datetime.now().isoformat(timespec="minutes"),
                                  "report": report})
@@ -283,7 +296,60 @@ def import_bytes(db, raw: bytes, name: str, kinds=("apartment", "house", "land")
     return total_added, report
 
 
-def _import_rows(db, rows, cols, kind, source):
+def _is_coordinate_file(header) -> bool:
+    cols = map_columns(header, None)
+    has_loc = {"lat", "lon"} <= cols.keys() or {"x", "y"} <= cols.keys()
+    return has_loc and "price" not in cols and ("deal_ref" in cols or "cadastre" in cols)
+
+
+def _row_locations(rows, cols):
+    """Yield a (lat, lon) or None per row, from degrees or LKS grid columns."""
+    def num(row, k):
+        i = cols.get(k)
+        return to_float(row[i]) if i is not None and i < len(row) else None
+
+    if {"lat", "lon"} <= cols.keys():
+        for r in rows:
+            lat, lon = num(r, "lat"), num(r, "lon")
+            yield (round(lat, 6), round(lon, 6)) if geo.in_latvia(lat, lon) else None
+    elif {"x", "y"} <= cols.keys():
+        sample = rows[:2000]
+        x_east = geo.x_is_easting([num(r, "x") for r in sample], [num(r, "y") for r in sample])
+        for r in rows:
+            yield geo.to_latlon(num(r, "x"), num(r, "y"), x_east)
+    else:
+        for _ in rows:
+            yield None
+
+
+def _read_coordinates(header, rows, coords) -> int:
+    cols = map_columns(header, None)
+    n = 0
+    for row, loc in zip(rows, _row_locations(rows, cols)):
+        if not loc:
+            continue
+        for key in ("deal_ref", "cadastre"):
+            i = cols.get(key)
+            if i is not None and i < len(row) and row[i].strip():
+                coords.setdefault(f"{key}:{row[i].strip()}", loc)
+        n += 1
+    return n
+
+
+def _lookup(coords, ref, cadastre):
+    if ref and f"deal_ref:{ref}" in coords:
+        return coords[f"deal_ref:{ref}"]
+    if cadastre:
+        # an apartment (17 digits) lies in the building with the first 14 digits
+        for c in (cadastre, cadastre[:14], cadastre[:11]):
+            if f"cadastre:{c}" in coords:
+                return coords[f"cadastre:{c}"]
+    return None
+
+
+def _import_rows(db, rows, cols, kind, source, coords=None):
+    coords = coords or {}
+
     def get(row, k):
         i = cols.get(k)
         return row[i].strip() if i is not None and i < len(row) and row[i] is not None else None
@@ -291,8 +357,8 @@ def _import_rows(db, rows, cols, kind, source):
     # A deal (DeaId) covering several objects has one total price — €/m² would be wrong.
     refs = Counter(get(r, "deal_ref") for r in rows) if "deal_ref" in cols else Counter()
     lo, hi = PPM_BOUNDS[kind]
-    batch, added, skipped, multi = [], 0, 0, 0
-    for row in rows:
+    batch, added, skipped, multi, located = [], 0, 0, 0, 0
+    for row, own_loc in zip(rows, _row_locations(rows, cols)):
         ref = get(row, "deal_ref")
         parts = to_float(get(row, "parts"))
         if (ref and refs[ref] > 1) or (parts and parts > 1):
@@ -312,23 +378,30 @@ def _import_rows(db, rows, cols, kind, source):
         rooms = to_float(get(row, "rooms"))
         floors = to_float(get(row, "floors_total"))
         year = to_float(get(row, "build_year"))
-        batch.append((kind, ref, d, price, area, round(ppm, 2), territory, address, get(row, "cadastre") or "",
+        cadastre = get(row, "cadastre") or ""
+        loc = own_loc or _lookup(coords, ref, cadastre)
+        located += bool(loc)
+        batch.append((kind, ref, d, price, area, round(ppm, 2), territory, address, cadastre,
                       int(rooms) if rooms else None, get(row, "floor"), int(floors) if floors else None,
                       int(year) if year and 1800 < year < 2100 else None, to_float(get(row, "land_area")),
-                      source.rsplit("/", 1)[-1]))
+                      source.rsplit("/", 1)[-1], loc[0] if loc else None, loc[1] if loc else None))
         if len(batch) >= 2000:
             added += _insert(db, batch)
             batch = []
     added += _insert(db, batch)
-    return added, skipped, multi
+    return added, skipped, multi, located
 
 
 def _insert(db, batch):
     if not batch:
         return 0
+    # Re-importing a file fills in locations for sales imported before coordinates were available.
     cur = db.executemany("""INSERT INTO sales (kind, deal_ref, deal_date, price, area_m2, price_m2, territory, address,
-                            cadastre_no, rooms, floor, floors_total, build_year, land_area_m2, source)
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING""", batch)
+                            cadastre_no, rooms, floor, floors_total, build_year, land_area_m2, source, lat, lon)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                            ON CONFLICT (kind, deal_date, cadastre_no, price, area_m2) DO UPDATE SET
+                            lat = COALESCE(excluded.lat, sales.lat), lon = COALESCE(excluded.lon, sales.lon)
+                            WHERE sales.lat IS NULL AND excluded.lat IS NOT NULL""", batch)
     return max(cur.rowcount, 0)
 
 
@@ -417,6 +490,8 @@ def query(db, f, limit=200000, columns="*"):
         v = to_float(f.get(key))
         if v is not None:
             where.append(f"{col} {op} ?"), params.append(v)
+    if f.get("located"):
+        where.append("lat IS NOT NULL")
     if f.get("since"):
         where.append("deal_date >= ?"), params.append(f["since"])
     if f.get("until"):
@@ -511,3 +586,28 @@ def comparables(db, p, months=24):
         if len(local) >= 5:
             return local
     return out
+
+
+# --------------------------------------------------------------------------- map
+
+MAP_LIMIT = 40000
+
+
+def located_count(db):
+    return db.execute("SELECT count(*) FROM sales WHERE lat IS NOT NULL").fetchone()[0]
+
+
+def map_points(db, f):
+    """Sales grouped per building location, compact for the map:
+    {"points": [[lat, lon, [[date, address, area, rooms, floor, price, ppm, year, cadastre], ...]], ...]}"""
+    rows = query(db, {**f, "located": True}, limit=MAP_LIMIT,
+                 columns="lat, lon, deal_date, address, area_m2, rooms, floor, floors_total, price, price_m2, "
+                         "build_year, cadastre_no")
+    groups = defaultdict(list)
+    for r in rows:
+        r = tuple(r)
+        floor = f"{r[6] or ''}{'/' + str(r[7]) if r[7] else ''}"
+        groups[(r[0], r[1])].append([r[2], r[3] or "", round(r[4], 1), r[5], floor, round(r[8]), round(r[9]),
+                                     r[10], r[11]])
+    return {"points": [[lat, lon, items] for (lat, lon), items in groups.items()],
+            "count": len(rows), "truncated": len(rows) >= MAP_LIMIT}

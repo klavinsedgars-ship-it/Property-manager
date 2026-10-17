@@ -8,6 +8,7 @@
   <script src="{{ url_for('static', filename='chart.umd.min.js') }}"></script>
   <script src="{{ url_for('static', filename='charts.js') }}"></script>
   <script src="{{ url_for('static', filename='upload.js') }}" defer></script>
+  {% block head %}{% endblock %}
 </head>
 <body>
 <div class="layout">
@@ -19,7 +20,7 @@
     <a href="{{ url_for('main.analytics') }}" class="{{ 'on' if ep == 'main.analytics' }}">Analytics</a>
     <a href="{{ url_for('main.tenants') }}" class="{{ 'on' if 'tenant' in ep }}">Tenants</a>
     <a href="{{ url_for('main.documents') }}" class="{{ 'on' if 'document' in ep }}">Documents</a>
-    <a href="{{ url_for('main.sales') }}" class="{{ 'on' if ep in ('main.sales', 'main.stats') }}">Sold properties</a>
+    <a href="{{ url_for('main.sales') }}" class="{{ 'on' if ep in ('main.sales', 'main.sales_map', 'main.stats') }}">Sold properties</a>
     <a href="{{ url_for('main.market_view') }}" class="{{ 'on' if ep in ('main.market_view',) }}">Market data</a>
     <a href="{{ url_for('main.settings_view') }}" class="{{ 'on' if 'settings' in ep or ep == 'main.status' }}">Settings</a>
   </nav>

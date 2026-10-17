@@ -147,3 +147,59 @@ def test_discover_with_fake_ckan(db, monkeypatch):
     res = vzd.meta_get(db, "sales_resources")
     assert [r["year"] for r in res] == [2025, 2024]          # XLSX skipped, newest first
     assert "2 sales files and 3 statistics tables" in msg
+
+
+COORDS_DD = """DeaId,BuildCadNr,DdN,DdE
+1001,01000123456,56.9600,24.1900
+1002,01000123457,56.9514,24.1133
+""".encode("utf-8")
+
+# Same buildings as LKS-92 grid (X = northing, Y = easting — Latvian convention), keyed by building cadastre
+COORDS_XY = """BuildCadNr,X,Y
+01000123456,312690.1,511040.2
+13000123456,310000.0,470000.0
+""".encode("utf-8")
+
+
+def _zip(**files):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, data in files.items():
+            z.writestr(name.replace("__", "/"), data)
+    return buf.getvalue()
+
+
+def test_locations_from_coordinate_file(db):
+    vzd.import_bytes(db, _zip(**{"TG_2025.csv": TG, "TG_koord.csv": COORDS_DD}), "a.zip")
+    r = {x["cadastre_no"]: x for x in db.execute("SELECT * FROM sales")}
+    assert (r["01000123456001001"]["lat"], r["01000123456001001"]["lon"]) == (56.96, 24.19)
+    assert r["13000123456001001"]["lat"] is None     # Jūrmala deal has no coordinates in this file
+
+
+def test_locations_from_lks_grid_by_building_cadastre(db):
+    vzd.import_bytes(db, _zip(**{"TG_2025.csv": TG, "koordinates.csv": COORDS_XY}), "b.zip")
+    r = {x["cadastre_no"]: x for x in db.execute("SELECT * FROM sales")}
+    lat, lon = r["01000123456001001"]["lat"], r["01000123456001001"]["lon"]
+    assert 56.9 < lat < 57.0 and 24.1 < lon < 24.25               # Rīga
+    lat, lon = r["13000123456001001"]["lat"], r["13000123456001001"]["lon"]
+    assert 56.9 < lat < 57.0 and 23.4 < lon < 23.6                # Jūrmala area
+
+
+def test_reimport_fills_missing_locations(db):
+    vzd.import_bytes(db, TG, "TG_2025.csv")
+    assert vzd.located_count(db) == 0
+    vzd.import_bytes(db, _zip(**{"TG_2025.csv": TG, "TG_koord.csv": COORDS_DD}), "a.zip")
+    assert vzd.located_count(db) == 2
+    assert db.execute("SELECT count(*) FROM sales").fetchone()[0] == 3
+
+
+def test_map_endpoint(client, app):
+    with app.app_context():
+        from app.db import get_db
+        vzd.import_bytes(get_db(), _zip(**{"TG_2025.csv": TG, "TG_koord.csv": COORDS_DD}), "a.zip")
+    d = client.get("/market/map.json?kind=apartment&since=").get_json()
+    assert d["count"] == 2 and len(d["points"]) == 2
+    lat, lon, items = d["points"][0]
+    assert items[0][6] > 0 and items[0][1]
+    page = client.get("/market/map?kind=apartment&since=").get_data(as_text=True)
+    assert 'id="map"' in page and "leaflet.js" in page

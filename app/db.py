@@ -70,6 +70,8 @@ def init_db(target):
 # Columns added after the first release: (table, column, type). Applied to older databases.
 MIGRATIONS = [
     ("properties", "expected_rent", "REAL"),
+    ("sales", "lat", "REAL"),
+    ("sales", "lon", "REAL"),
 ]
 
 

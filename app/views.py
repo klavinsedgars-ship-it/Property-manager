@@ -547,6 +547,19 @@ def sales():
                            coverage=vzd.coverage(db))
 
 
+@bp.route("/market/map")
+def sales_map():
+    db = get_db()
+    f = _sales_filters()
+    return render_template("sales_map.html", f=f, territories=vzd.territories(db, f["kind"] or None),
+                           kinds=vzd.KINDS, coverage=vzd.coverage(db), located=vzd.located_count(db))
+
+
+@bp.route("/market/map.json")
+def sales_points():
+    return vzd.map_points(get_db(), _sales_filters())
+
+
 @bp.route("/market/sales.csv")
 def sales_csv():
     rows = vzd.query(get_db(), _sales_filters())
