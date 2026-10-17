@@ -95,6 +95,7 @@ MIGRATIONS = [
     ("properties", "expected_rent", "REAL"),
     ("sales", "lat", "REAL"),
     ("sales", "lon", "REAL"),
+    ("transactions", "batch", "TEXT"),
 ]
 
 

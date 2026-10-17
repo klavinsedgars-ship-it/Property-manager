@@ -1,11 +1,12 @@
 import csv
 import io
 import json
+import uuid
 from datetime import date
 
 from flask import Blueprint, Response, abort, current_app, flash, redirect, render_template, request, url_for
 
-from . import ai, analyzer
+from . import ai, analyzer, importer
 from . import finance as fin
 from . import market
 from . import services as svc
@@ -175,11 +176,14 @@ def property_detail(pid):
     elif tab == "money":
         ctx["filter_cat"] = request.args.get("category", "")
         ctx["filter_year"] = request.args.get("year", "")
+        ctx["batch"] = request.args.get("batch", "")
         txs = b["txs"]
         if ctx["filter_cat"]:
             txs = [t for t in txs if t["category"] == ctx["filter_cat"]]
         if ctx["filter_year"]:
             txs = [t for t in txs if t["date"].startswith(ctx["filter_year"])]
+        if ctx["batch"]:
+            txs = [t for t in txs if t["batch"] == ctx["batch"]]
         ctx["txs"] = txs
         ctx["years"] = sorted({t["date"][:4] for t in b["txs"]}, reverse=True)
     elif tab == "tenants":
@@ -251,6 +255,41 @@ def transaction_delete(tid):
     db.execute("DELETE FROM transactions WHERE id=?", (tid,))
     db.commit()
     return redirect(url_for("main.property_detail", pid=t["property_id"], tab="money"))
+
+
+@bp.route("/properties/<int:pid>/transactions/import", methods=["POST"])
+def transactions_import(pid):
+    """Bulk import from a CSV file or pasted spreadsheet cells; tagged with a batch id for undo."""
+    db = get_db()
+    db.execute("SELECT id FROM properties WHERE id=?", (pid,)).fetchone() or abort(404)
+    f = request.files.get("file")
+    text = f.read().decode("utf-8-sig", "replace") if f and f.filename else request.form.get("text", "")
+    default_date = request.form.get("date") or date.today().isoformat()
+    try:
+        rows = importer.parse(text)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("main.property_detail", pid=pid, tab="money"))
+    batch = f"imp-{date.today().isoformat()}-{uuid.uuid4().hex[:6]}"
+    for r in rows:
+        kind = "income" if fin.group_of(r["category"]) == "income" else "expense"
+        db.execute("""INSERT INTO transactions (property_id, date, kind, category, amount, description, vendor, batch)
+                      VALUES (?,?,?,?,?,?,?,?)""",
+                   (pid, r["date"] or default_date, kind, r["category"], r["amount"], r["description"], r["vendor"],
+                    batch))
+    db.commit()
+    total = sum(r["amount"] for r in rows)
+    flash(f"Imported {len(rows)} entries, total {total:,.2f} €. Check the categories below — "
+          f"or undo this import.".replace(",", " "))
+    return redirect(url_for("main.property_detail", pid=pid, tab="money", batch=batch))
+
+
+@bp.route("/properties/<int:pid>/transactions/undo/<batch>", methods=["POST"])
+def transactions_undo(pid, batch):
+    n = get_db().execute("DELETE FROM transactions WHERE property_id=? AND batch=?", (pid, batch)).rowcount
+    get_db().commit()
+    flash(f"Removed {n} imported entries")
+    return redirect(url_for("main.property_detail", pid=pid, tab="money"))
 
 
 @bp.route("/transactions.csv")

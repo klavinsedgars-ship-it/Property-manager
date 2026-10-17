@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     amount       REAL NOT NULL,
     description  TEXT,
     vendor       TEXT,
+    batch        TEXT,                             -- bulk-import id (for undo)
     created_at   TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS ix_tx_prop_date ON transactions(property_id, date);

@@ -115,6 +115,24 @@ pmBar("monthly", {{ ms|map(attribute='month')|list|tojson }}, [
     <span style="flex:1"></span>
     <a class="btn" href="{{ url_for('main.transaction_form', pid=p.id) }}">+ Add</a>
   </form>
+  {% if batch %}
+  <form method="post" action="{{ url_for('main.transactions_undo', pid=p.id, batch=batch) }}" class="inline" style="margin-top:8px" onsubmit="return confirm('Remove all entries from this import?')">
+    <span class="note">Showing only the entries from the last import.</span>
+    <button class="ghost">Undo this import</button>
+    <a href="{{ url_for('main.property_detail', pid=p.id, tab='money') }}">Show all</a>
+  </form>
+  {% endif %}
+  <details style="margin-top:10px"><summary>Import many expenses at once (CSV or paste from Excel / Google Sheets)</summary>
+    <form method="post" action="{{ url_for('main.transactions_import', pid=p.id) }}" enctype="multipart/form-data" class="stack" style="margin-top:8px">
+      <p class="note">Needs a header row with at least an amount column. Recognised columns: <b>date</b>, <b>category</b>, <b>amount</b> (or “Summa kopā”), <b>description</b> (or “Darba veids” / “Nosaukums”), <b>vendor</b>. Rows without a category are sorted automatically (labour / furniture &amp; appliances / materials) — you can edit any entry afterwards.</p>
+      <div class="row">
+        <label>CSV file<input type="file" name="file" accept=".csv,.txt"></label>
+        <label>Date for rows without a date<input type="date" name="date" value="{{ today }}"></label>
+      </div>
+      <label>…or paste cells<textarea name="text" rows="5" placeholder="Darba veids&#9;Summa kopā&#10;Virtuve IKEA&#9;1900&#10;Darbs&#9;1870"></textarea></label>
+      <button>Import</button>
+    </form>
+  </details>
 </div>
 <div class="card scroll">
   <table>
