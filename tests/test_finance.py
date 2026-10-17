@@ -107,3 +107,30 @@ def test_sale_scenarios_and_recommendation():
 def test_appreciation_from_index():
     idx = [(f"{2019 + i // 4}-Q{i % 4 + 1}", 100 * 1.01 ** i) for i in range(24)]
     assert fin.appreciation_from_index(idx, 5) == pytest.approx(1.01 ** 4 - 1, rel=1e-6)
+
+
+def test_yields_use_lease_rent_even_without_payments_recorded():
+    today = date(2026, 10, 18)
+    p = prop(purchase_date="2025-06-01", purchase_price=22000, purchase_costs=425)
+    lease = {"id": 1, "start_date": "2026-09-01", "end_date": None, "rent": 450}
+    txs = [tx("2025-07-01", "Renovation – labour", 15063.59), tx("2026-01-31", "Utilities", 600)]
+    m = fin.property_metrics(p, txs, [lease], 39000, "index", S, today)
+    assert m.gross_yield == pytest.approx(5400 / m.cost_basis)
+    assert m.net_yield == pytest.approx((5400 - 600) / m.cost_basis)      # was 0 when no rent was recorded
+    assert m.cash_on_cash == pytest.approx((5400 - 600) / m.cost_basis)
+
+
+def test_irr_hidden_in_first_year():
+    m = fin.property_metrics(prop(purchase_date="2026-09-15"), [], [], 51000, "x", S, date(2026, 10, 18))
+    assert m.irr is None and m.roi is not None
+
+
+def test_roi_counts_money_topped_up_for_mortgage():
+    today = date(2024, 1, 1)
+    p = prop(purchase_date="2022-01-01", purchase_price=60000, purchase_costs=0,
+             loan_amount=57000, loan_rate=5, loan_term_months=360, loan_start="2022-01-01")
+    m = fin.property_metrics(p, [], [], 60000, "x", S, today)          # empty flat, loan paid from pocket
+    payments = fin.monthly_payment(57000, 5, 360) * 24
+    assert m.own_cash == pytest.approx(3000)
+    assert m.extra["topped_up"] == pytest.approx(payments, rel=0.01)
+    assert m.extra["cash_invested"] == pytest.approx(3000 + payments, rel=0.01)

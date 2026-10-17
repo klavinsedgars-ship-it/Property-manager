@@ -13,11 +13,11 @@
 {% else %}
 <div class="kpis">
   <div class="kpi"><div class="l">Portfolio value</div><div class="v">{{ t.value|money }}</div><div class="h">Loans {{ t.loan_balance|money }}{% if t.ltv %} · LTV {{ t.ltv|pct(0) }}{% endif %}</div></div>
-  <div class="kpi"><div class="l">Equity</div><div class="v">{{ t.equity|money }}</div><div class="h">Own cash in {{ t.own_cash|money }}</div></div>
+  <div class="kpi"><div class="l">Equity</div><div class="v">{{ t.equity|money }}</div><div class="h">Cash put in {{ t.cash_invested|money }}</div></div>
   <div class="kpi"><div class="l">Rent / month</div><div class="v">{{ t.rent_monthly|money }}</div><div class="h">Gross yield {{ t.gross_yield|pct }}</div></div>
   <div class="kpi"><div class="l">NOI, last 12 m</div><div class="v">{{ t.noi_12m|money }}</div><div class="h">Net yield {{ t.net_yield|pct }}</div></div>
   <div class="kpi"><div class="l">Unrealised gain</div><div class="v {{ 'pos' if t.unrealized_gain >= 0 else 'neg' }}">{{ t.unrealized_gain|money }}</div><div class="h">After selling costs</div></div>
-  <div class="kpi"><div class="l">Total return</div><div class="v {{ 'pos' if t.total_return >= 0 else 'neg' }}">{{ t.total_return|money }}</div><div class="h">ROI {{ t.roi|pct }} on own cash{% if t.realized %} · realised {{ t.realized|money }}{% endif %}</div></div>
+  <div class="kpi"><div class="l">Total return</div><div class="v {{ 'pos' if t.total_return >= 0 else 'neg' }}">{{ t.total_return|money }}</div><div class="h">ROI {{ t.roi|pct }} on cash put in{% if t.realized %} · realised {{ t.realized|money }}{% endif %}</div></div>
 </div>
 
 <div class="grid g2">

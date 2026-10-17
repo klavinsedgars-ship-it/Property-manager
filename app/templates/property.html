@@ -22,13 +22,13 @@
 {% if tab == 'overview' %}
 <div class="kpis">
   <div class="kpi"><div class="l">Total invested</div><div class="v">{{ m.cost_basis|money }}</div><div class="h">Purchase {{ m.purchase_total|money }} + improvements {{ m.capex|money }}</div></div>
-  <div class="kpi"><div class="l">{{ 'Sold for' if m.sold else 'Current value' }}</div><div class="v">{{ m.value|money }}</div><div class="h">{{ m.value_source }}</div></div>
+  <div class="kpi"><div class="l">{{ 'Sold for' if m.sold else 'Current value' }}</div><div class="v">{{ m.value|money }}</div><div class="h">{{ m.value_source }}{% if m.extra.value_warning %}<br><span class="warn">⚠ {{ m.extra.value_warning }}</span>{% endif %}</div></div>
   <div class="kpi"><div class="l">Equity</div><div class="v">{{ m.equity|money }}</div><div class="h">{% if m.loan_balance %}Loan left {{ m.loan_balance|money }}{% else %}No loan{% endif %}</div></div>
   <div class="kpi"><div class="l">Rent / month</div><div class="v">{{ m.rent_monthly|money if m.rent_monthly else '—' }}</div><div class="h">{% if m.extra.rent_basis == 'expected' %}expected (no lease yet){% else %}Occupancy 12 m {{ m.occupancy_12m|pct(0) }}{% endif %}</div></div>
-  <div class="kpi"><div class="l">Gross / net yield</div><div class="v">{{ m.gross_yield|pct }} <span class="note">/ {{ m.net_yield|pct }}</span></div><div class="h">On total invested · cap rate {{ m.cap_rate|pct }}</div></div>
+  <div class="kpi"><div class="l">Gross / net yield</div><div class="v">{{ m.gross_yield|pct }} <span class="note">/ {{ m.net_yield|pct }}</span></div><div class="h">{% if m.extra.no_costs %}<span class="warn">⚠ no running costs entered</span>{% else %}On total invested · cap rate {{ m.cap_rate|pct }}{% endif %}</div></div>
   <div class="kpi"><div class="l">Cash-on-cash</div><div class="v">{{ m.cash_on_cash|pct }}</div><div class="h">{% if m.payback_years %}Payback ≈ {{ m.payback_years|round(1) }} yrs{% else %}After debt service{% endif %}</div></div>
   <div class="kpi"><div class="l">Cash flow to date</div><div class="v {{ 'pos' if m.cash_flow_total >= 0 else 'neg' }}">{{ m.cash_flow_total|money }}</div><div class="h">Rent − costs − tax − loan payments{% if m.extra.partial_sales %} + {{ m.extra.partial_sales|money }} units sold{% endif %}</div></div>
-  <div class="kpi"><div class="l">{{ 'Realised profit' if m.sold else 'Total return' }}</div><div class="v {{ 'pos' if m.total_return >= 0 else 'neg' }}">{{ m.total_return|money }}</div><div class="h">ROI {{ m.roi|pct }} · IRR {{ m.irr|pct }}/yr</div></div>
+  <div class="kpi"><div class="l">{{ 'Realised profit' if m.sold else 'Total return' }}</div><div class="v {{ 'pos' if m.total_return >= 0 else 'neg' }}">{{ m.total_return|money }}</div><div class="h">ROI {{ m.roi|pct }} on {{ m.extra.cash_invested|money }} put in{% if m.extra.topped_up %} (incl. {{ m.extra.topped_up|money }} topped up){% endif %} · IRR {{ (m.irr|pct ~ '/yr') if m.irr is not none else 'after 1 year' }}</div></div>
 </div>
 
 <div class="grid g2">

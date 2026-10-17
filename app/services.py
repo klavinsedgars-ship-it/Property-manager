@@ -26,9 +26,11 @@ def current_value(bundle, capex, today):
     if bundle["valuations"]:
         v = bundle["valuations"][0]
         return float(v["value"]), f"{v['source']} {v['date']}"
-    est = market.index_estimate(get_db(), p, capex)
-    if est:
-        return est
+    # The CSP index tracks dwellings — don't apply it to land, basements, parking or commercial space.
+    if (p["kind"] or "apartment") in ("apartment", "house"):
+        est = market.index_estimate(get_db(), p, capex)
+        if est:
+            return est
     cost = float(p["purchase_price"] or 0) + capex
     return cost, "cost (no valuation yet)"
 
@@ -38,7 +40,11 @@ def compute(bundle, today=None):
     s = settings()
     capex = sum(float(t["amount"]) for t in bundle["txs"] if fin.group_of(t["category"], t["kind"]) == "capex")
     value, src = current_value(bundle, capex, today)
-    return fin.property_metrics(bundle["p"], bundle["txs"], bundle["leases"], value, src, s, today)
+    m = fin.property_metrics(bundle["p"], bundle["txs"], bundle["leases"], value, src, s, today)
+    if m.extra.get("partial_sales") and not bundle["valuations"] and not m.sold:
+        m.extra["value_warning"] = ("Part of this property is sold, but the value still assumes all of it — "
+                                    "add a valuation of what you still own.")
+    return m
 
 
 def all_properties(include_sold=True):
@@ -61,10 +67,14 @@ def portfolio_totals(bundles):
     t["count"] = len(active)
     t["sold_count"] = len(bundles) - len(active)
     t["realized"] = sum(b["m"].realized_profit or 0 for b in bundles if b["m"].sold)
-    t["gross_yield"] = t["rent_monthly"] * 12 / t["cost_basis"] if t["cost_basis"] else None
-    t["net_yield"] = t["noi_12m"] / t["cost_basis"] if t["cost_basis"] else None
+    # Yields over income-producing properties only (renovating / empty ones would dilute them).
+    earning = [b["m"] for b in active if b["m"].gross_yield]
+    basis = sum(m.cost_basis for m in earning)
+    t["gross_yield"] = sum(m.gross_yield * m.cost_basis for m in earning) / basis if basis else None
+    t["net_yield"] = sum(m.extra["noi_run_rate"] for m in earning) / basis if basis else None
     t["ltv"] = t["loan_balance"] / t["value"] if t["value"] else None
-    t["roi"] = (t["total_return"] / t["own_cash"]) if t["own_cash"] > 0 else None
+    t["cash_invested"] = sum(b["m"].extra.get("cash_invested", 0) for b in active)
+    t["roi"] = (t["total_return"] / t["cash_invested"]) if t["cash_invested"] > 0 else None
     return t
 
 

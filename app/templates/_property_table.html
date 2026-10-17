@@ -1,7 +1,7 @@
 <table>
   <thead><tr>
     <th>Property</th><th>Status</th><th class="n">Invested</th><th class="n">Value</th><th class="n">Rent/m</th>
-    <th class="n">Gross yield</th><th class="n">Net yield</th><th class="n">Cash-on-cash</th><th class="n">ROI</th><th class="n">IRR</th>
+    <th class="n">Gross yield</th><th class="n">Net yield</th><th class="n">Cash-on-cash</th><th class="n" title="Total return (cash so far + profit if sold today) ÷ cash you put in">ROI</th><th class="n" title="Annualised return; shown after 12 months">IRR</th>
   </tr></thead>
   <tbody>
   {% for b in bundles %}{% set m = b.m %}
@@ -9,13 +9,13 @@
       <td><a href="{{ url_for('main.property_detail', pid=b.p.id) }}"><b>{{ b.p.name }}</b></a><br><span class="note">{{ b.p.address or '' }}{% if b.p.area_m2 %} · {{ b.p.area_m2|num }} m²{% endif %}</span></td>
       <td><span class="badge {{ b.p.status }}">{{ b.p.status|replace('_', ' ') }}</span></td>
       <td class="n">{{ m.cost_basis|money }}</td>
-      <td class="n" title="{{ m.value_source }}">{{ m.value|money }}</td>
+      <td class="n" title="{{ m.extra.value_warning or m.value_source }}">{{ m.value|money }}{% if m.extra.value_warning %} <span class="warn" title="{{ m.extra.value_warning }}">⚠</span>{% endif %}</td>
       <td class="n">{{ m.rent_monthly|money if m.rent_monthly else '—' }}</td>
       <td class="n">{{ m.gross_yield|pct }}</td>
-      <td class="n">{{ m.net_yield|pct }}</td>
+      <td class="n">{{ m.net_yield|pct }}{% if m.extra.no_costs %} <span class="warn" title="No running costs entered yet — net yield equals gross">⚠</span>{% endif %}</td>
       <td class="n">{{ m.cash_on_cash|pct }}</td>
       <td class="n {{ 'pos' if (m.roi or 0) >= 0 else 'neg' }}">{{ m.roi|pct }}</td>
-      <td class="n">{{ m.irr|pct }}</td>
+      <td class="n" {% if m.irr is none and not m.sold and m.months_owned < 12 %}title="Shown after 12 months of ownership"{% endif %}>{{ m.irr|pct if m.irr is not none else ('< 1 yr' if m.months_owned < 12 else '—') }}</td>
     </tr>
   {% endfor %}
   </tbody>

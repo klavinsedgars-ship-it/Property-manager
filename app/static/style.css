@@ -97,3 +97,4 @@ details summary { cursor: pointer; color: var(--accent); }
 .badge.v-good { color: var(--good); border-color: var(--good); }
 .badge.v-fair { color: var(--warn); border-color: var(--warn); }
 .badge.v-poor { color: var(--bad); border-color: var(--bad); }
+.warn { color: var(--warn); }

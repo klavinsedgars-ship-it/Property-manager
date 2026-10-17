@@ -372,16 +372,30 @@ def property_metrics(p, txs, leases, value: float, value_source: str, s: dict, t
         m.rent_monthly = _f(p, "expected_rent")
         m.extra["rent_basis"] = "expected"
 
+    # Run-rate basis, used consistently for all yields: current lease / expected rent (or the
+    # last 12 months' actual income when there is none) minus annualised running costs.
     annual_rent = m.rent_monthly * 12 or m.income_12m
-    if m.cost_basis > 0:
-        m.gross_yield = annual_rent / m.cost_basis if annual_rent else None
-        # Use trailing NOI once there is a year of history, otherwise annualise current rent
-        noi = m.noi_12m if m.months_owned >= 12 or not m.rent_monthly else annual_rent - m.opex_12m
-        m.net_yield = noi / m.cost_basis if annual_rent else None
+    hist_months = min(max(m.months_owned, 1), 12)
+    annual_opex = m.opex_12m * 12 / hist_months
+    m.extra["annual_opex"] = annual_opex
+    m.extra["no_costs"] = bool(annual_rent) and m.opex_total == 0
+    noi = annual_rent - annual_opex
+    m.extra["noi_run_rate"] = noi
+    annual_ds = loan.payment * 12 if loan.active and not m.sold else 0.0
+
+    # Cash actually put in: down payment + improvements not covered by the loan, plus any money
+    # added later to cover negative cash flow (e.g. mortgage payments while the flat was empty).
+    m.extra["topped_up"] = _peak_shortfall(txs, sched, pdate, end)
+    m.extra["cash_invested"] = max(m.own_cash, 0.0) + m.extra["topped_up"]
+    invested = m.extra["cash_invested"]
+
+    if m.cost_basis > 0 and annual_rent:
+        m.gross_yield = annual_rent / m.cost_basis
+        m.net_yield = noi / m.cost_basis
         if m.value:
-            m.cap_rate = noi / m.value if annual_rent else None
-        if m.own_cash > 0 and annual_rent:
-            m.cash_on_cash = (noi - m.debt_service_12m) / m.own_cash
+            m.cap_rate = noi / m.value
+        if invested > 0:
+            m.cash_on_cash = (noi - annual_ds) / invested
 
     # occupancy over trailing 12 months (only months after first lease start)
     first_lease = min((to_date(l["start_date"]) for l in leases), default=None)
@@ -400,8 +414,8 @@ def property_metrics(p, txs, leases, value: float, value_source: str, s: dict, t
     # Everything received so far + what a sale would return now − own cash put in.
     # (Principal repaid is in cash_flow_total as an outflow and comes back via lower loan balance.)
     m.total_return = (m.cash_flow_total + m.value - selling_costs - cgt - m.loan_balance) - m.own_cash
-    if m.own_cash > 0:
-        m.roi = m.total_return / m.own_cash
+    if invested > 0:
+        m.roi = m.total_return / invested
     if m.sold:
         m.realized_profit = m.total_return
 
@@ -413,14 +427,37 @@ def property_metrics(p, txs, leases, value: float, value_source: str, s: dict, t
     for d, i, pr in sched:
         flows.append((d, -(i + pr)))
     flows.append((end, m.value - selling_costs - cgt - m.loan_balance))
-    if m.months_owned >= 1:
+    # An annualised return over a few months mostly annualises the one-off purchase and selling
+    # costs, giving absurd figures — only report IRR after a full year.
+    if m.months_owned >= 12:
         m.irr = xirr(flows)
 
     annual_cf = (m.noi_12m - m.debt_service_12m - m.tax_total / max(m.months_owned / 12, 1)
                  if m.months_owned >= 12 else annual_rent - m.opex_12m - loan.payment * 12)
-    if annual_cf > 0 and m.own_cash > 0:
-        m.payback_years = m.own_cash / annual_cf
+    if annual_cf > 0 and invested > 0:
+        m.payback_years = invested / annual_cf
     return m
+
+
+def _peak_shortfall(txs, sched, start: date, end: date) -> float:
+    """Largest cumulative out-of-pocket amount from running the property (after purchase/renovation,
+    which are already in own cash): operating cash flow and debt service in date order."""
+    events = []
+    for t in txs:
+        g = group_of(t["category"], t["kind"])
+        if g == "capex":
+            continue
+        a = float(t["amount"])
+        events.append((t["date"][:10], a if g in ("income", "sale") else -a))
+    for d, i, pr in sched:
+        events.append((d.isoformat(), -(i + pr)))
+    cum, low = 0.0, 0.0
+    for d, a in sorted(events):
+        if d > end.isoformat():
+            break
+        cum += a
+        low = min(low, cum)
+    return -low
 
 
 def _f(row, key, default=0.0):
