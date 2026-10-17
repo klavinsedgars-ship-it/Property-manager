@@ -24,5 +24,11 @@
   <p class="note">Everything lives in <code>data/property.db</code> (SQLite) and <code>data/uploads/</code>. Back up the <code>data</code> folder. Set <code>PM_PASSWORD</code> to require a login when running on a server.</p>
   <a class="btn ghost" href="{{ url_for('main.transactions_csv') }}">Export entries (CSV)</a>
   <a class="btn ghost" href="{{ url_for('main.status') }}">Storage status</a>
+  <a class="btn ghost" href="{{ url_for('main.data_export') }}">Export everything (JSON)</a>
+  <form method="post" action="{{ url_for('main.data_import') }}" enctype="multipart/form-data" class="inline" style="margin-top:12px">
+    <label>Import portfolio file (.json)<input type="file" name="file" accept=".json" required></label>
+    <button>Import</button>
+  </form>
+  <p class="note">Properties are matched by name: existing ones are updated and their previously imported entries replaced (entries you typed in are kept), so importing the same file twice is safe.</p>
 </div>
 {% endblock %}

@@ -6,7 +6,7 @@ from datetime import date
 
 from flask import Blueprint, Response, abort, current_app, flash, redirect, render_template, request, url_for
 
-from . import ai, analyzer, importer
+from . import ai, analyzer, importer, portfolio
 from . import finance as fin
 from . import market
 from . import services as svc
@@ -23,7 +23,7 @@ PROPERTY_FIELDS = ["name", "address", "city", "district", "kind", "building_seri
 NUMERIC = {"expected_rent", "area_m2", "rooms", "purchase_price", "purchase_costs", "loan_amount", "loan_rate",
            "loan_term_months", "sale_price", "sale_costs", "declared_residence"}
 
-KINDS = ["apartment", "house", "commercial", "land", "parking"]
+KINDS = ["apartment", "house", "basement", "commercial", "land", "parking"]
 STATUSES = ["renovating", "rented", "vacant", "own_use", "sold"]
 # Common Latvian building series — affects market value comparisons.
 SERIES = ["", "Pre-war", "Stalin era", "Khrushchev (103/316/318)", "Lithuanian project", "119", "467",
@@ -221,7 +221,7 @@ def transaction_form(pid=None, tid=None):
                            WHERE property_id=? ORDER BY start_date DESC""", (pid,)).fetchall()
     if request.method == "POST":
         category = request.form["category"]
-        kind = "income" if fin.group_of(category) == "income" else "expense"
+        kind = "income" if fin.is_inflow(category) else "expense"
         vals = (request.form.get("date") or date.today().isoformat(), kind, category, _num("amount"),
                 request.form.get("description") or None, request.form.get("vendor") or None,
                 request.form.get("lease_id") or None)
@@ -272,7 +272,7 @@ def transactions_import(pid):
         return redirect(url_for("main.property_detail", pid=pid, tab="money"))
     batch = f"imp-{date.today().isoformat()}-{uuid.uuid4().hex[:6]}"
     for r in rows:
-        kind = "income" if fin.group_of(r["category"]) == "income" else "expense"
+        kind = "income" if fin.is_inflow(r["category"]) else "expense"
         db.execute("""INSERT INTO transactions (property_id, date, kind, category, amount, description, vendor, batch)
                       VALUES (?,?,?,?,?,?,?,?)""",
                    (pid, r["date"] or default_date, kind, r["category"], r["amount"], r["description"], r["vendor"],
@@ -739,3 +739,29 @@ def analysis_delete(aid):
     get_db().execute("DELETE FROM deal_analyses WHERE id=?", (aid,))
     get_db().commit()
     return redirect(url_for("main.analyzer_view"))
+
+
+# --------------------------------------------------------------------------- data import / export
+
+@bp.route("/data/export.json")
+def data_export():
+    body = json.dumps(portfolio.export(get_db()), ensure_ascii=False, indent=1, default=str)
+    return Response(body, mimetype="application/json",
+                    headers={"Content-Disposition": f"attachment; filename=portfolio-{date.today()}.json"})
+
+
+@bp.route("/data/import", methods=["POST"])
+def data_import():
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("Choose a portfolio .json file", "error")
+        return redirect(url_for("main.settings_view"))
+    try:
+        report = portfolio.import_data(get_db(), json.loads(f.read().decode("utf-8-sig")))
+        flash(f"Imported {len(report)} properties")
+        for line in report:
+            flash(line)
+    except (ValueError, KeyError, TypeError) as e:
+        get_db().rollback()
+        flash(f"Import failed — {e}", "error")
+    return redirect(url_for("main.properties"))

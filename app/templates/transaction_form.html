@@ -10,6 +10,7 @@
       <optgroup label="Renovation / improvements (capex)">{% for c, g in CATEGORIES if g == 'capex' %}<option {{ 'selected' if v.category == c or (not v.category and p.status == 'renovating' and loop.first) }}>{{ c }}</option>{% endfor %}</optgroup>
       <optgroup label="Running costs">{% for c, g in CATEGORIES if g == 'opex' %}<option {{ 'selected' if v.category == c }}>{{ c }}</option>{% endfor %}</optgroup>
       <optgroup label="Tax">{% for c, g in CATEGORIES if g == 'tax' %}<option {{ 'selected' if v.category == c }}>{{ c }}</option>{% endfor %}</optgroup>
+      <optgroup label="Selling part of the property">{% for c, g in CATEGORIES if g == 'sale' %}<option {{ 'selected' if v.category == c }}>{{ c }}</option>{% endfor %}</optgroup>
     </select></label>
     <label>Amount, €<input name="amount" inputmode="decimal" required value="{{ v.amount or '' }}" autofocus></label>
   </div>

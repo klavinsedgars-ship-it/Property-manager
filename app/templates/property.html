@@ -27,7 +27,7 @@
   <div class="kpi"><div class="l">Rent / month</div><div class="v">{{ m.rent_monthly|money if m.rent_monthly else '—' }}</div><div class="h">{% if m.extra.rent_basis == 'expected' %}expected (no lease yet){% else %}Occupancy 12 m {{ m.occupancy_12m|pct(0) }}{% endif %}</div></div>
   <div class="kpi"><div class="l">Gross / net yield</div><div class="v">{{ m.gross_yield|pct }} <span class="note">/ {{ m.net_yield|pct }}</span></div><div class="h">On total invested · cap rate {{ m.cap_rate|pct }}</div></div>
   <div class="kpi"><div class="l">Cash-on-cash</div><div class="v">{{ m.cash_on_cash|pct }}</div><div class="h">{% if m.payback_years %}Payback ≈ {{ m.payback_years|round(1) }} yrs{% else %}After debt service{% endif %}</div></div>
-  <div class="kpi"><div class="l">Cash flow to date</div><div class="v {{ 'pos' if m.cash_flow_total >= 0 else 'neg' }}">{{ m.cash_flow_total|money }}</div><div class="h">Rent − costs − tax − loan payments</div></div>
+  <div class="kpi"><div class="l">Cash flow to date</div><div class="v {{ 'pos' if m.cash_flow_total >= 0 else 'neg' }}">{{ m.cash_flow_total|money }}</div><div class="h">Rent − costs − tax − loan payments{% if m.extra.partial_sales %} + {{ m.extra.partial_sales|money }} units sold{% endif %}</div></div>
   <div class="kpi"><div class="l">{{ 'Realised profit' if m.sold else 'Total return' }}</div><div class="v {{ 'pos' if m.total_return >= 0 else 'neg' }}">{{ m.total_return|money }}</div><div class="h">ROI {{ m.roi|pct }} · IRR {{ m.irr|pct }}/yr</div></div>
 </div>
 
@@ -35,9 +35,9 @@
   <div class="card">
     <h2>By year</h2>
     <div class="scroll"><table>
-      <tr><th>Year</th><th class="n">Income</th><th class="n">Running costs</th><th class="n">NOI</th><th class="n">Renovation</th><th class="n">Loan</th><th class="n">Tax</th><th class="n">Cash flow</th></tr>
+      <tr><th>Year</th><th class="n">Income</th><th class="n">Running costs</th><th class="n">NOI</th><th class="n">Renovation</th><th class="n">Loan</th><th class="n">Tax</th>{% if m.extra.partial_sales %}<th class="n">Units sold</th>{% endif %}<th class="n">Cash flow</th></tr>
       {% for y in yearly|reverse %}
-      <tr><td>{{ y.year }}</td><td class="n">{{ y.income|money }}</td><td class="n">{{ y.opex|money }}</td><td class="n">{{ y.noi|money }}</td><td class="n">{{ y.capex|money }}</td><td class="n">{{ (y.interest + y.principal)|money }}</td><td class="n">{{ y.tax|money }}</td><td class="n {{ 'pos' if y.cash_flow >= 0 else 'neg' }}">{{ y.cash_flow|money }}</td></tr>
+      <tr><td>{{ y.year }}</td><td class="n">{{ y.income|money }}</td><td class="n">{{ y.opex|money }}</td><td class="n">{{ y.noi|money }}</td><td class="n">{{ y.capex|money }}</td><td class="n">{{ (y.interest + y.principal)|money }}</td><td class="n">{{ y.tax|money }}</td>{% if m.extra.partial_sales %}<td class="n">{{ y.sale|money }}</td>{% endif %}<td class="n {{ 'pos' if y.cash_flow >= 0 else 'neg' }}">{{ y.cash_flow|money }}</td></tr>
       {% endfor %}
     </table></div>
   </div>

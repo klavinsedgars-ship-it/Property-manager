@@ -24,12 +24,14 @@ COLUMNS = {
 
 # keyword -> category, checked in order against the normalised description
 GUESSES = [
-    (("darbs", "darba", "alga", "labour", "labor", "meistar", "montaz", "uzstadis"), "Renovation – labour"),
-    (("ikea", "jysk", "pepco", "ledusskap", "velasmas", "trauku", "gulta", "matrac", "kresl", "galds", "galdin",
-      "skapis", "spogul", "dekor", "divan", "tv", "televiz", "mebel", "aizkar", "lampa", "virtuvestehn"),
-     "Furniture & appliances"),
-    (("remont", "flize", "plaksne", "gipsk", "osb", "putas", "skruv", "grunts", "kras", "santehn", "kran", "pods",
-      "dusa", "stikl", "depo", "kurss", "radiator", "trub", "elektr", "laminat", "material"), "Renovation – materials"),
+    (("darbs", "darba", "alga", "labour", "labor", "meistar", "uzstadis", "nesej", "tirisan", "pieslegum"),
+     "Renovation – labour"),
+    (("panel", "flize", "laminat", "plaksn", "gipsk", "osb", "virsm"), "Renovation – materials"),
+    (("ikea", "jysk", "pepco", "ledusskap", "velasmas", "vela", "trauku", "gulta", "matrac", "kresl", "galds", "galdin",
+      "skapis", "spogul", "dekor", "divan", "tv", "televiz", "mebel", "aizkar", "xbox", "cepeskr", "mikrovil",
+      "virtuvestehn"), "Furniture & appliances"),
+    (("remont", "putas", "skruv", "grunts", "kras", "santehn", "kran", "pods", "dusa", "stikl", "depo", "radiator",
+      "trub", "elektr", "vads", "material"), "Renovation – materials"),
 ]
 
 

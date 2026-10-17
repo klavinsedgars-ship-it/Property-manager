@@ -37,10 +37,15 @@ CATEGORIES = [
     ("Bank fees", "opex"),
     ("Other expense", "opex"),
     ("Income tax on rent", "tax"),
+    ("Sale of part / unit", "sale"),       # e.g. selling storage units of a basement; not rental income
 ]
 CATEGORY_GROUP = dict(CATEGORIES)
-INCOME_CATEGORIES = [c for c, g in CATEGORIES if g == "income"]
-EXPENSE_CATEGORIES = [c for c, g in CATEGORIES if g != "income"]
+INCOME_CATEGORIES = [c for c, g in CATEGORIES if g in ("income", "sale")]
+EXPENSE_CATEGORIES = [c for c, g in CATEGORIES if g not in ("income", "sale")]
+
+
+def is_inflow(category: str, kind: str = "expense") -> bool:
+    return group_of(category, kind) in ("income", "sale")
 
 
 def group_of(category: str, kind: str = "expense") -> str:
@@ -243,8 +248,8 @@ def monthly_table(txs, loan: Loan | None, start: date, end: date) -> list[dict]:
     out = []
     for m, r in rows.items():
         noi = r["income"] - r["opex"]
-        cash = noi - r["tax"] - r["capex"] - r["interest"] - r["principal"]
-        out.append({"month": m, "income": r["income"], "opex": r["opex"], "capex": r["capex"],
+        cash = noi + r["sale"] - r["tax"] - r["capex"] - r["interest"] - r["principal"]
+        out.append({"month": m, "income": r["income"], "sale": r["sale"], "opex": r["opex"], "capex": r["capex"],
                     "tax": r["tax"], "interest": r["interest"], "principal": r["principal"],
                     "noi": noi, "cash_flow": cash})
     return out
@@ -329,6 +334,8 @@ def property_metrics(p, txs, leases, value: float, value_source: str, s: dict, t
             m.opex_total += a
         elif g == "tax":
             m.tax_total += a
+        elif g == "sale":
+            m.extra["partial_sales"] = m.extra.get("partial_sales", 0.0) + a
     m.cost_basis = m.purchase_total + m.capex
 
     sched = loan.schedule(end)
@@ -336,7 +343,8 @@ def property_metrics(p, txs, leases, value: float, value_source: str, s: dict, t
     m.principal_total = sum(pr for _, _, pr in sched)
     m.loan_balance = 0.0 if m.sold else loan.balance_at(end)
     m.own_cash = m.cost_basis - (loan.amount if loan.active else 0.0)
-    m.cash_flow_total = m.income_total - m.opex_total - m.tax_total - m.interest_total - m.principal_total
+    m.cash_flow_total = (m.income_total + m.extra.get("partial_sales", 0.0) - m.opex_total - m.tax_total
+                         - m.interest_total - m.principal_total)
 
     m.value = float(p["sale_price"]) if m.sold else value
     m.value_source = "sale" if m.sold else value_source
@@ -398,7 +406,7 @@ def property_metrics(p, txs, leases, value: float, value_source: str, s: dict, t
     flows = [(pdate, -m.purchase_total + (loan.amount if loan.active else 0.0))]
     for t in txs:
         g, a, d = group_of(t["category"], t["kind"]), float(t["amount"]), to_date(t["date"])
-        flows.append((d, a if g == "income" else -a))
+        flows.append((d, a if g in ("income", "sale") else -a))
     for d, i, pr in sched:
         flows.append((d, -(i + pr)))
     flows.append((end, m.value - selling_costs - cgt - m.loan_balance))
@@ -470,7 +478,7 @@ def sale_scenarios(p, metrics: Metrics, txs, s: dict, today: date, appreciation:
     hist = [(pdate, -metrics.purchase_total + (loan.amount if loan.active else 0.0))]
     for t in txs:
         g, a, d = group_of(t["category"], t["kind"]), float(t["amount"]), to_date(t["date"])
-        hist.append((d, a if g == "income" else -a))
+        hist.append((d, a if g in ("income", "sale") else -a))
     for d, i, pr in loan.schedule(today):
         hist.append((d, -(i + pr)))
 
